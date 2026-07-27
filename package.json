@@ -1,0 +1,20 @@
+{
+  "name": "skyrush-aviator-first-structure",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n SERVER,WEB -c auto \"npm run dev -w @skyrush/server\" \"npm run dev -w @skyrush/web\"",
+    "build": "npm run build -w @skyrush/server && npm run build -w @skyrush/web",
+    "start": "npm run start -w @skyrush/server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  },
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10.0.0"
+  }
+}
