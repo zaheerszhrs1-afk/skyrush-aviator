@@ -2,6 +2,7 @@ import * as crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { promisify } from "node:util";
 import { AuthSessionModel, UserModel, type UserRole } from "./models.js";
+import { fromMinor, minorFromDocument } from "./money.js";
 
 const scryptAsync = promisify(crypto.scrypt);
 const SESSION_COOKIE = "skyrush_session";
@@ -15,6 +16,9 @@ export interface AuthUser {
   status: "ACTIVE" | "SUSPENDED";
   balance: number;
   lockedBalance: number;
+  bettingLockedBalance: number;
+  pendingRewards: number;
+  totalBalance: number;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -53,14 +57,26 @@ export async function verifyPassword(password: string, stored: string): Promise<
 }
 
 export function publicUser(document: any): AuthUser {
+  const balanceMinor = minorFromDocument(document, "balanceMinor", "balance");
+  const withdrawalLockedMinor = minorFromDocument(document, "withdrawalLockedMinor", "lockedBalance");
+  const bettingLockedMinor = Number.isSafeInteger(Number(document?.bettingLockedMinor))
+    ? Number(document.bettingLockedMinor)
+    : 0;
+  const pendingRewardsMinor = Number.isSafeInteger(Number(document?.pendingRewardsMinor))
+    ? Number(document.pendingRewardsMinor)
+    : 0;
+
   return {
     id: String(document._id),
     name: String(document.name),
     email: String(document.email),
     role: document.role as UserRole,
     status: document.status as "ACTIVE" | "SUSPENDED",
-    balance: Number(Number(document.balance ?? 0).toFixed(2)),
-    lockedBalance: Number(Number(document.lockedBalance ?? 0).toFixed(2))
+    balance: fromMinor(balanceMinor),
+    lockedBalance: fromMinor(withdrawalLockedMinor),
+    bettingLockedBalance: fromMinor(bettingLockedMinor),
+    pendingRewards: fromMinor(pendingRewardsMinor),
+    totalBalance: fromMinor(balanceMinor + withdrawalLockedMinor + bettingLockedMinor + pendingRewardsMinor)
   };
 }
 
@@ -163,6 +179,10 @@ export async function bootstrapAdmin(): Promise<void> {
     passwordHash: await hashPassword(password),
     role: "ADMIN",
     status: "ACTIVE",
+    balanceMinor: 0,
+    withdrawalLockedMinor: 0,
+    bettingLockedMinor: 0,
+    pendingRewardsMinor: 0,
     balance: 0,
     lockedBalance: 0
   });

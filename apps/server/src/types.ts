@@ -9,6 +9,7 @@ export interface PublicBet {
   status: "ACTIVE" | "CASHED_OUT" | "LOST" | "REFUNDED";
   cashoutMultiplier?: number;
   payout?: number;
+  guaranteedMaxMultiplier?: number;
 }
 
 export interface RoundSnapshot {
@@ -25,10 +26,16 @@ export interface RoundSnapshot {
   houseEdgePercent: number;
   lossPool: number;
   commissionPercent: number;
+  activeBetEscrow: number;
+  reservedRewardLiquidity: number;
+  availableRewardLiquidity: number;
 }
 
 export interface WalletSnapshot {
   balance: number;
   lockedBalance: number;
+  bettingLockedBalance: number;
+  pendingRewards: number;
+  totalBalance: number;
   activeBets: Partial<Record<BetSlot, PublicBet>>;
 }

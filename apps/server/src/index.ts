@@ -1,10 +1,14 @@
 import path from "node:path";
+import * as crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
 import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
+import mongoose from "mongoose";
 import { Server } from "socket.io";
 import { GameEngine } from "./game-engine.js";
+import { reconcile } from "./accounting.js";
+import { fromMinor } from "./money.js";
 import type { BetSlot } from "./types.js";
 import { bootstrapAdmin, createAuthSession, destroyAuthSession, hashPassword, optionalAuth, publicUser, requireAdmin, requireAuth, resolveAuthUserFromCookie, verifyPassword, type AuthenticatedRequest } from "./auth.js";
 import { connectDatabase, disconnectDatabase } from "./database.js";
@@ -15,6 +19,7 @@ import {
   DepositRequestModel,
   GameBetModel,
   GameRoundModel,
+  PlatformAuditModel,
   PlatformSettingsModel,
   PlatformStateModel,
   UserModel,
@@ -87,6 +92,10 @@ app.post("/api/auth/register", asyncRoute(async (request, response) => {
     passwordHash: await hashPassword(password),
     role: "USER",
     status: "ACTIVE",
+    balanceMinor: 0,
+    withdrawalLockedMinor: 0,
+    bettingLockedMinor: 0,
+    pendingRewardsMinor: 0,
     balance: 0,
     lockedBalance: 0
   });
@@ -147,7 +156,21 @@ app.get("/api/wallet/transactions", requireAuth, asyncRoute(async (request: Auth
     .skip((page - 1) * limit)
     .limit(limit)
     .lean();
-  response.json({ ok: true, transactions });
+  response.json({
+    ok: true,
+    transactions: transactions.map((item: any) => ({
+      ...item,
+      amount: Number.isSafeInteger(Number(item.amountMinor)) ? fromMinor(item.amountMinor) : Number(item.amount ?? 0),
+      balanceAfter: Number.isSafeInteger(Number(item.balanceAfterMinor))
+        ? fromMinor(item.balanceAfterMinor)
+        : Number(item.balanceAfter ?? 0),
+      lockedBalanceAfter: Number.isSafeInteger(Number(item.withdrawalLockedAfterMinor))
+        ? fromMinor(item.withdrawalLockedAfterMinor)
+        : Number(item.lockedBalanceAfter ?? 0),
+      bettingLockedAfter: fromMinor(item.bettingLockedAfterMinor ?? 0),
+      pendingRewardsAfter: fromMinor(item.pendingRewardsAfterMinor ?? 0)
+    }))
+  });
 }));
 
 app.post("/api/deposits", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
@@ -183,17 +206,85 @@ app.get("/api/withdrawals/me", requireAuth, asyncRoute(async (request: Authentic
 }));
 
 app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response) => {
-  const [users, depositsPending, withdrawalsPending, settings, state, activeBets, recentRounds] = await Promise.all([
+  const now = new Date();
+  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+  const [
+    users,
+    depositsPending,
+    withdrawalsPending,
+    settings,
+    state,
+    activeBets,
+    recentRounds,
+    userTotalsResult,
+    dailyRevenueResult,
+    monthlyRevenueResult
+  ] = await Promise.all([
     UserModel.countDocuments({ role: "USER" }),
     DepositRequestModel.countDocuments({ status: "PENDING" }),
     WithdrawalRequestModel.countDocuments({ status: { $in: ["PENDING", "PROCESSING"] } }),
     PlatformSettingsModel.findOne({ key: "global" }).lean(),
     PlatformStateModel.findOne({ key: "global" }).lean(),
     GameBetModel.countDocuments({ status: "ACTIVE" }),
-    GameRoundModel.find({ phase: "CRASHED" }).sort({ crashedAt: -1 }).limit(10).select("roundId crashPoint totalStake totalPayout crashedAt").lean()
+    GameRoundModel.find({ phase: "CRASHED" })
+      .sort({ crashedAt: -1 })
+      .limit(10)
+      .select("roundId crashPoint totalStake totalPayout totalStakeMinor totalPayoutMinor totalCommissionMinor totalLossesMinor crashedAt")
+      .lean(),
+    UserModel.aggregate([
+      { $match: { role: "USER" } },
+      {
+        $group: {
+          _id: null,
+          availableMinor: { $sum: { $ifNull: ["$balanceMinor", 0] } },
+          withdrawalLockedMinor: { $sum: { $ifNull: ["$withdrawalLockedMinor", 0] } },
+          bettingLockedMinor: { $sum: { $ifNull: ["$bettingLockedMinor", 0] } },
+          pendingRewardsMinor: { $sum: { $ifNull: ["$pendingRewardsMinor", 0] } }
+        }
+      }
+    ]),
+    PlatformAuditModel.aggregate([
+      { $match: { type: "COMMISSION_CREDIT" as const, createdAt: { $gte: dayStart } } },
+      { $group: { _id: null, amountMinor: { $sum: "$commissionWalletDeltaMinor" } } }
+    ]),
+    PlatformAuditModel.aggregate([
+      { $match: { type: "COMMISSION_CREDIT" as const, createdAt: { $gte: monthStart } } },
+      { $group: { _id: null, amountMinor: { $sum: "$commissionWalletDeltaMinor" } } }
+    ])
   ]);
-  const bankroll = Number(state?.houseBankroll ?? 0) + Number(state?.gameProfit ?? 0);
-  const reservePercent = Number(settings?.reservePercent ?? 30);
+
+  const stateAny = state as any;
+  const settingsAny = settings as any;
+  const userTotals = userTotalsResult[0] ?? {
+    availableMinor: 0,
+    withdrawalLockedMinor: 0,
+    bettingLockedMinor: 0,
+    pendingRewardsMinor: 0
+  };
+  const accounting = reconcile({
+    totalApprovedDepositsMinor: Number(stateAny?.totalApprovedDepositsMinor ?? 0),
+    availableUserBalanceMinor: Number(userTotals.availableMinor ?? 0),
+    withdrawalLockedMinor: Number(userTotals.withdrawalLockedMinor ?? 0),
+    activeBetEscrowMinor: Number(stateAny?.activeBetEscrowMinor ?? 0),
+    pendingRewardsMinor: Number(userTotals.pendingRewardsMinor ?? 0),
+    lossPoolMinor: Number(stateAny?.lossPoolMinor ?? 0),
+    commissionWalletMinor: Number(stateAny?.commissionWalletMinor ?? 0),
+    totalCompletedWithdrawalsMinor: Number(stateAny?.totalCompletedWithdrawalsMinor ?? 0)
+  });
+  const betEscrowMirrorDifferenceMinor =
+    Number(stateAny?.activeBetEscrowMinor ?? 0) - Number(userTotals.bettingLockedMinor ?? 0);
+  const protectedPoolMinor = Math.floor(
+    Number(stateAny?.lossPoolMinor ?? 0) * (Number(settingsAny?.reservePercent ?? 0) / 100)
+  );
+  const availableRewardLiquidityMinor = Math.max(
+    0,
+    Number(stateAny?.lossPoolMinor ?? 0) -
+      protectedPoolMinor -
+      Number(stateAny?.reservedRewardLiquidityMinor ?? 0)
+  );
+
   response.json({
     ok: true,
     summary: {
@@ -201,15 +292,43 @@ app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response
       depositsPending,
       withdrawalsPending,
       activeBets,
-      houseBankroll: Number(state?.houseBankroll ?? 0),
-      gameProfit: Number(state?.gameProfit ?? 0),
-      effectiveBankroll: bankroll,
-      requiredReserve: Math.max(0, bankroll * reservePercent / 100),
-      lossPool: Number((state as any)?.lossPool ?? 0),
-      totalCommissionEarned: Number((state as any)?.totalCommissionEarned ?? 0),
-      totalApprovedDeposits: Number(state?.totalApprovedDeposits ?? 0),
-      totalCompletedWithdrawals: Number(state?.totalCompletedWithdrawals ?? 0),
-      recentRounds
+      totalUserBalances: fromMinor(userTotals.availableMinor),
+      withdrawalLockedFunds: fromMinor(userTotals.withdrawalLockedMinor),
+      activeBetEscrow: fromMinor(stateAny?.activeBetEscrowMinor),
+      reservedRewardLiquidity: fromMinor(stateAny?.reservedRewardLiquidityMinor),
+      availableRewardLiquidity: fromMinor(availableRewardLiquidityMinor),
+      lossPool: fromMinor(stateAny?.lossPoolMinor),
+      pendingRewards: fromMinor(userTotals.pendingRewardsMinor),
+      commissionWallet: fromMinor(stateAny?.commissionWalletMinor),
+      totalCommissionEarned: fromMinor(stateAny?.totalCommissionEarnedMinor),
+      totalRewardsPaid: fromMinor(stateAny?.totalRewardsPaidMinor),
+      totalBetVolume: fromMinor(stateAny?.totalBetVolumeMinor),
+      totalLosses: fromMinor(stateAny?.totalLossesMinor),
+      totalApprovedDeposits: fromMinor(stateAny?.totalApprovedDepositsMinor),
+      totalCompletedWithdrawals: fromMinor(stateAny?.totalCompletedWithdrawalsMinor),
+      lockedFunds: fromMinor(
+        Number(userTotals.withdrawalLockedMinor ?? 0) + Number(stateAny?.activeBetEscrowMinor ?? 0)
+      ),
+      dailyRevenue: fromMinor(dailyRevenueResult[0]?.amountMinor ?? 0),
+      monthlyRevenue: fromMinor(monthlyRevenueResult[0]?.amountMinor ?? 0),
+      reconciliation: {
+        totalInflows: fromMinor(stateAny?.totalApprovedDepositsMinor),
+        accountedFunds: fromMinor(accounting.accountedMinor),
+        difference: fromMinor(accounting.differenceMinor),
+        betEscrowMirrorDifference: fromMinor(betEscrowMirrorDifferenceMinor),
+        balanced: accounting.balanced && betEscrowMirrorDifferenceMinor === 0
+      },
+      recentRounds: recentRounds.map((round: any) => ({
+        ...round,
+        totalStake: Number.isSafeInteger(Number(round.totalStakeMinor))
+          ? fromMinor(round.totalStakeMinor)
+          : Number(round.totalStake ?? 0),
+        totalPayout: Number.isSafeInteger(Number(round.totalPayoutMinor))
+          ? fromMinor(round.totalPayoutMinor)
+          : Number(round.totalPayout ?? 0),
+        totalCommission: fromMinor(round.totalCommissionMinor ?? 0),
+        totalLosses: fromMinor(round.totalLossesMinor ?? 0)
+      }))
     }
   });
 }));
@@ -285,12 +404,69 @@ app.patch("/api/admin/withdrawals/:id", requireAdmin, asyncRoute(async (request:
   response.json({ ok: true });
 }));
 
+app.get("/api/admin/transactions", requireAdmin, asyncRoute(async (request, response) => {
+  const limit = Math.min(500, Math.max(1, Number(request.query.limit ?? 300)));
+  const items = await WalletTransactionModel.find({})
+    .populate("userId", "name email")
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+  response.json({
+    ok: true,
+    transactions: items.map((item: any) => ({
+      ...item,
+      amount: Number.isSafeInteger(Number(item.amountMinor)) ? fromMinor(item.amountMinor) : Number(item.amount ?? 0),
+      balanceAfter: Number.isSafeInteger(Number(item.balanceAfterMinor))
+        ? fromMinor(item.balanceAfterMinor)
+        : Number(item.balanceAfter ?? 0),
+      lockedBalanceAfter: Number.isSafeInteger(Number(item.withdrawalLockedAfterMinor))
+        ? fromMinor(item.withdrawalLockedAfterMinor)
+        : Number(item.lockedBalanceAfter ?? 0),
+      bettingLockedAfter: fromMinor(item.bettingLockedAfterMinor ?? 0),
+      pendingRewardsAfter: fromMinor(item.pendingRewardsAfterMinor ?? 0)
+    }))
+  });
+}));
+
+app.get("/api/admin/audit", requireAdmin, asyncRoute(async (request, response) => {
+  const limit = Math.min(500, Math.max(1, Number(request.query.limit ?? 200)));
+  const items = await PlatformAuditModel.find({})
+    .populate("userId", "name email")
+    .populate("adminId", "name email")
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+  response.json({
+    ok: true,
+    audit: items.map((item: any) => ({
+      ...item,
+      activeBetEscrowDelta: fromMinor(item.activeBetEscrowDeltaMinor),
+      reservedLiquidityDelta: fromMinor(item.reservedLiquidityDeltaMinor),
+      lossPoolDelta: fromMinor(item.lossPoolDeltaMinor),
+      commissionWalletDelta: fromMinor(item.commissionWalletDeltaMinor),
+      activeBetEscrowAfter: fromMinor(item.activeBetEscrowAfterMinor),
+      reservedLiquidityAfter: fromMinor(item.reservedLiquidityAfterMinor),
+      lossPoolAfter: fromMinor(item.lossPoolAfterMinor),
+      commissionWalletAfter: fromMinor(item.commissionWalletAfterMinor)
+    }))
+  });
+}));
+
 app.get("/api/admin/settings", requireAdmin, asyncRoute(async (_request, response) => {
   const [settings, state] = await Promise.all([
     PlatformSettingsModel.findOne({ key: "global" }).lean(),
     PlatformStateModel.findOne({ key: "global" }).lean()
   ]);
-  response.json({ ok: true, settings, state });
+  response.json({
+    ok: true,
+    settings,
+    state: {
+      lossPool: fromMinor((state as any)?.lossPoolMinor),
+      activeBetEscrow: fromMinor((state as any)?.activeBetEscrowMinor),
+      reservedRewardLiquidity: fromMinor((state as any)?.reservedRewardLiquidityMinor),
+      commissionWallet: fromMinor((state as any)?.commissionWalletMinor)
+    }
+  });
 }));
 
 app.patch("/api/admin/settings", requireAdmin, asyncRoute(async (request: AuthenticatedRequest, response) => {
@@ -300,37 +476,52 @@ app.patch("/api/admin/settings", requireAdmin, asyncRoute(async (request: Authen
   const minBet = Math.max(1, numberInput(request.body?.minBet));
   const maxBet = Math.max(minBet, numberInput(request.body?.maxBet));
   const maxCashoutMultiplier = Math.min(1000, Math.max(1.01, numberInput(request.body?.maxCashoutMultiplier)));
-  const houseBankroll = Math.max(0, numberInput(request.body?.houseBankroll));
-  if (![houseEdgePercent, commissionPercent, reservePercent, minBet, maxBet, maxCashoutMultiplier, houseBankroll].every(Number.isFinite)) {
+  if (![houseEdgePercent, commissionPercent, reservePercent, minBet, maxBet, maxCashoutMultiplier].every(Number.isFinite)) {
     response.status(400).json({ ok: false, message: "All numeric settings must be valid numbers." });
     return;
   }
 
-  const [settings, state] = await Promise.all([
-    PlatformSettingsModel.findOneAndUpdate(
-      { key: "global" },
-      {
-        $set: {
-          houseEdgePercent,
-          commissionPercent,
-          reservePercent,
-          minBet,
-          maxBet,
-          maxCashoutMultiplier,
-          depositsEnabled: request.body?.depositsEnabled !== false,
-          withdrawalsEnabled: request.body?.withdrawalsEnabled !== false,
-          updatedBy: request.authUser!.id
-        }
-      },
-      { new: true, upsert: true }
-    ).lean(),
-    PlatformStateModel.findOneAndUpdate(
-      { key: "global" },
-      { $set: { houseBankroll } },
-      { new: true, upsert: true }
-    ).lean()
-  ]);
-  response.json({ ok: true, settings, state, message: "Settings apply to future rounds and new bets." });
+  const settings = await PlatformSettingsModel.findOneAndUpdate(
+    { key: "global" },
+    {
+      $set: {
+        houseEdgePercent,
+        commissionPercent,
+        reservePercent,
+        minBet,
+        maxBet,
+        maxCashoutMultiplier,
+        depositsEnabled: request.body?.depositsEnabled !== false,
+        withdrawalsEnabled: request.body?.withdrawalsEnabled !== false,
+        updatedBy: request.authUser!.id
+      }
+    },
+    { new: true, upsert: true }
+  ).lean();
+
+  const state = await PlatformStateModel.findOne({ key: "global" }).lean();
+  await PlatformAuditModel.create({
+    eventKey: `settings:${crypto.randomUUID()}`,
+    type: "SETTINGS_UPDATED" as const,
+    adminId: new mongoose.Types.ObjectId(request.authUser!.id),
+    activeBetEscrowAfterMinor: Number((state as any)?.activeBetEscrowMinor ?? 0),
+    reservedLiquidityAfterMinor: Number((state as any)?.reservedRewardLiquidityMinor ?? 0),
+    lossPoolAfterMinor: Number((state as any)?.lossPoolMinor ?? 0),
+    commissionWalletAfterMinor: Number((state as any)?.commissionWalletMinor ?? 0),
+    description: "Updated global game, liquidity and commission settings",
+    metadata: {
+      houseEdgePercent,
+      commissionPercent,
+      reservePercent,
+      minBet,
+      maxBet,
+      maxCashoutMultiplier,
+      depositsEnabled: request.body?.depositsEnabled !== false,
+      withdrawalsEnabled: request.body?.withdrawalsEnabled !== false
+    }
+  });
+
+  response.json({ ok: true, settings, message: "Settings apply to future rounds and new bets." });
 }));
 
 io.use(async (socket, next) => {

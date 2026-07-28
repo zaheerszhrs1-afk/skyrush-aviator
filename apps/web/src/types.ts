@@ -10,6 +10,7 @@ export interface PublicBet {
   status: "ACTIVE" | "CASHED_OUT" | "LOST" | "REFUNDED";
   cashoutMultiplier?: number;
   payout?: number;
+  guaranteedMaxMultiplier?: number;
 }
 
 export interface RoundSnapshot {
@@ -24,11 +25,19 @@ export interface RoundSnapshot {
   bets: PublicBet[];
   online: number;
   houseEdgePercent: number;
+  lossPool: number;
+  commissionPercent: number;
+  activeBetEscrow: number;
+  reservedRewardLiquidity: number;
+  availableRewardLiquidity: number;
 }
 
 export interface WalletSnapshot {
   balance: number;
   lockedBalance: number;
+  bettingLockedBalance: number;
+  pendingRewards: number;
+  totalBalance: number;
   activeBets: Partial<Record<BetSlot, PublicBet>>;
 }
 
@@ -40,6 +49,9 @@ export interface AuthUser {
   status: "ACTIVE" | "SUSPENDED";
   balance: number;
   lockedBalance: number;
+  bettingLockedBalance: number;
+  pendingRewards: number;
+  totalBalance: number;
 }
 
 export interface ChatItem {
@@ -55,6 +67,8 @@ export interface WalletTransaction {
   amount: number;
   balanceAfter: number;
   lockedBalanceAfter: number;
+  bettingLockedAfter?: number;
+  pendingRewardsAfter?: number;
   description: string;
   createdAt: string;
 }
@@ -77,5 +91,28 @@ export interface WithdrawalRequest {
   method: string;
   accountDetails: string;
   status: "PENDING" | "PROCESSING" | "COMPLETED" | "REJECTED";
+  createdAt: string;
+}
+
+export interface AdminWalletTransaction extends WalletTransaction {
+  userId: string | { _id: string; name: string; email: string };
+}
+
+export interface PlatformAuditItem {
+  _id: string;
+  type: string;
+  description: string;
+  userId?: string | { _id: string; name: string; email: string };
+  adminId?: string | { _id: string; name: string; email: string };
+  roundId?: string;
+  betId?: string;
+  activeBetEscrowDelta: number;
+  reservedLiquidityDelta: number;
+  lossPoolDelta: number;
+  commissionWalletDelta: number;
+  activeBetEscrowAfter: number;
+  reservedLiquidityAfter: number;
+  lossPoolAfter: number;
+  commissionWalletAfter: number;
   createdAt: string;
 }

@@ -22,9 +22,21 @@ const emptyRound: RoundSnapshot = {
   history: [],
   bets: [],
   online: 0,
-  houseEdgePercent: 1
+  houseEdgePercent: 1,
+  lossPool: 0,
+  commissionPercent: 10,
+  activeBetEscrow: 0,
+  reservedRewardLiquidity: 0,
+  availableRewardLiquidity: 0
 };
-const emptyWallet: WalletSnapshot = { balance: 0, lockedBalance: 0, activeBets: {} };
+const emptyWallet: WalletSnapshot = {
+  balance: 0,
+  lockedBalance: 0,
+  bettingLockedBalance: 0,
+  pendingRewards: 0,
+  totalBalance: 0,
+  activeBets: {}
+};
 
 export default function App() {
   const [round, setRound] = useState<RoundSnapshot>(emptyRound);
@@ -135,7 +147,7 @@ export default function App() {
         <div className="balance">
           <span className={`connection ${connected ? "ok" : ""}`}>{statusLabel}</span>
           <strong>{wallet.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> PKR
-          {wallet.lockedBalance > 0 && <span className="locked-balance">Locked {wallet.lockedBalance.toLocaleString()} PKR</span>}
+          {(wallet.lockedBalance > 0 || wallet.bettingLockedBalance > 0) && <span className="locked-balance">Locked {(wallet.lockedBalance + wallet.bettingLockedBalance).toLocaleString()} PKR</span>}
           <button className="toolbar-button" aria-label="Wallet" onClick={() => setFinanceOpen(true)}>☰</button>
           <button className="toolbar-button chat-symbol" aria-label="Chat" onClick={() => setChatOpen((value) => !value)}>◯</button>
         </div>

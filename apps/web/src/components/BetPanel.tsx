@@ -18,6 +18,12 @@ export function BetPanel({ slot, round, wallet }: Props) {
   const [autoAt, setAutoAt] = useState(1.1);
   const [message, setMessage] = useState("");
   const activeBet = wallet.activeBets[slot];
+  const payableMultiplier = activeBet
+    ? Math.min(round.multiplier, activeBet.guaranteedMaxMultiplier ?? round.multiplier)
+    : round.multiplier;
+  const estimatedCashout = activeBet
+    ? activeBet.amount + Math.max(0, activeBet.amount * (payableMultiplier - 1)) * (1 - round.commissionPercent / 100)
+    : 0;
 
   useEffect(() => {
     if (!autoCashOut || !activeBet || round.phase !== "RUNNING" || round.multiplier < autoAt) return;
@@ -41,7 +47,7 @@ export function BetPanel({ slot, round, wallet }: Props) {
   };
 
   const buttonLabel = activeBet && round.phase === "RUNNING"
-    ? `Cash Out ${(activeBet.amount * round.multiplier).toFixed(2)} PKR`
+    ? `Cash Out ${estimatedCashout.toFixed(2)} PKR`
     : activeBet
       ? `Bet placed ${activeBet.amount.toFixed(2)} PKR`
       : `Bet ${amount.toFixed(2)} PKR`;
@@ -80,6 +86,9 @@ export function BetPanel({ slot, round, wallet }: Props) {
           <label><input type="checkbox" checked={autoCashOut} onChange={(event) => setAutoCashOut(event.target.checked)} /> Auto Cash Out</label>
           <input className="auto-value" type="number" min="1.01" step="0.01" value={autoAt} onChange={(event) => setAutoAt(Math.max(1.01, Number(event.target.value) || 1.1))} />
         </div>
+      )}
+      {activeBet?.guaranteedMaxMultiplier && (
+        <div className="panel-message">Guaranteed peer-funded cash-out up to {activeBet.guaranteedMaxMultiplier.toFixed(2)}x</div>
       )}
       <div className="panel-message">{message}</div>
     </section>

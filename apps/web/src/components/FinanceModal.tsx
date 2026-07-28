@@ -83,7 +83,7 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh }: FinanceModalP
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="finance-modal" role="dialog" aria-modal="true">
         <header>
-          <div><strong>Wallet</strong><span>Available {wallet.balance.toLocaleString()} PKR · Locked {wallet.lockedBalance.toLocaleString()} PKR</span></div>
+          <div><strong>Wallet</strong><span>Available {wallet.balance.toLocaleString()} PKR · Withdrawal lock {wallet.lockedBalance.toLocaleString()} PKR · Bet escrow {wallet.bettingLockedBalance.toLocaleString()} PKR</span></div>
           <button onClick={onClose}>×</button>
         </header>
         <nav>
