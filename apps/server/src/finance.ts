@@ -19,6 +19,36 @@ function walletFields(user: any) {
   return { balanceMinor, withdrawalLockedMinor, bettingLockedMinor, pendingRewardsMinor };
 }
 
+type WalletTransactionInputDocument = {
+  userId: mongoose.Types.ObjectId;
+  type: TransactionType;
+  amountMinor: number;
+  availableDeltaMinor: number;
+  withdrawalLockedDeltaMinor: number;
+  bettingLockedDeltaMinor: number;
+  pendingRewardsDeltaMinor: number;
+  balanceAfterMinor: number;
+  withdrawalLockedAfterMinor: number;
+  bettingLockedAfterMinor: number;
+  pendingRewardsAfterMinor: number;
+  amount: number;
+  balanceAfter: number;
+  lockedBalanceAfter: number;
+  referenceType: string;
+  referenceId: string;
+  description: string;
+  metadata: Record<string, unknown>;
+};
+
+function toObjectId(value: unknown): mongoose.Types.ObjectId {
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  const stringValue = String(value);
+  if (!mongoose.Types.ObjectId.isValid(stringValue)) {
+    throw new Error(`Invalid MongoDB ObjectId: ${stringValue}`);
+  }
+  return new mongoose.Types.ObjectId(stringValue);
+}
+
 function walletTransaction(input: {
   userId: unknown;
   type: TransactionType;
@@ -32,10 +62,11 @@ function walletTransaction(input: {
   referenceId: string;
   description: string;
   metadata?: Record<string, unknown>;
-}) {
+}): WalletTransactionInputDocument {
+  const userId = toObjectId(input.userId);
   const wallet = walletFields(input.user);
   return {
-    userId: input.userId,
+    userId,
     type: input.type,
     amountMinor: input.amountMinor,
     availableDeltaMinor: input.availableDeltaMinor ?? 0,
