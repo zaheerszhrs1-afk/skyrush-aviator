@@ -24,6 +24,7 @@ export class AviatorPixiScene {
   private crashStartedAt = 0;
   private lastFlightPoint: FlightPoint = { x: 0, y: 0, progress: 0 };
   private elapsedAnimation = 0;
+  private rayRotation = 0;
 
   private background: any;
   private rays: any;
@@ -190,6 +191,20 @@ export class AviatorPixiScene {
 
   private tick(deltaMS: number): void {
     this.elapsedAnimation += deltaMS;
+
+    if (this.round.phase === "RUNNING") {
+      this.rayRotation += deltaMS * 0.00009;
+    } else if (this.round.phase === "CRASHED") {
+      this.rayRotation += deltaMS * 0.000045;
+    } else {
+      this.rayRotation *= 0.92;
+      if (Math.abs(this.rayRotation) < 0.0001) this.rayRotation = 0;
+    }
+
+    if (this.rays) {
+      this.rays.rotation = this.rayRotation;
+    }
+
     this.renderFrame();
   }
 
@@ -324,21 +339,24 @@ export class AviatorPixiScene {
 
   private drawStaticScene(width: number, height: number): void {
     this.background.clear();
-    this.background.rect(0, 0, width, height).fill(0x050607);
+    this.background.roundRect(0, 0, width, height, 24).fill(0x030406);
 
     this.rays.clear();
     const originX = 0;
     const originY = height;
-    const radius = Math.hypot(width, height) * 1.45;
-    const rayCount = 17;
-    const startAngle = -Math.PI / 2;
-    const endAngle = -0.035;
+    const radius = Math.hypot(width, height) * 1.75;
+    const rayCount = 18;
+    const startAngle = -Math.PI / 2 - 0.04;
+    const endAngle = -0.015;
     const step = (endAngle - startAngle) / rayCount;
 
     for (let index = 0; index < rayCount; index += 1) {
       const angleA = startAngle + index * step;
       const angleB = angleA + step;
-      const color = index % 2 === 0 ? 0x111416 : 0x000000;
+      const isBlue = index % 2 === 0;
+      const color = isBlue ? 0x0a1821 : 0x000000;
+      const alpha = isBlue ? 0.92 : 1;
+
       this.rays
         .poly([
           originX,
@@ -348,20 +366,29 @@ export class AviatorPixiScene {
           originX + Math.cos(angleB) * radius,
           originY + Math.sin(angleB) * radius
         ], true)
-        .fill({ color, alpha: index % 2 === 0 ? 0.94 : 1 });
+        .fill({ color, alpha });
     }
+
+    this.rays.pivot.set(0, height);
+    this.rays.position.set(0, height);
+    this.rays.rotation = this.rayRotation;
 
     this.glow.clear();
     const glowX = width * 0.53;
-    const glowY = height * 0.49;
-    const glowWidth = width * 0.78;
-    const glowHeight = height * 0.82;
-    for (let index = 7; index >= 1; index -= 1) {
-      const ratio = index / 7;
+    const glowY = height * 0.45;
+    const glowWidth = width * 0.92;
+    const glowHeight = height * 0.96;
+
+    for (let index = 8; index >= 1; index -= 1) {
+      const ratio = index / 8;
       this.glow
         .ellipse(glowX, glowY, glowWidth * ratio * 0.5, glowHeight * ratio * 0.5)
-        .fill({ color: 0x087fbd, alpha: 0.018 + (1 - ratio) * 0.026 });
+        .fill({ color: 0x0f6ea0, alpha: 0.018 + (1 - ratio) * 0.032 });
     }
+
+    this.glow
+      .ellipse(width * 0.52, height * 0.47, width * 0.22, height * 0.18)
+      .fill({ color: 0x56c6ff, alpha: 0.07 });
   }
 
   private drawFlightCurve(width: number, height: number, point: FlightPoint): void {
