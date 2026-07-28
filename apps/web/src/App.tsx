@@ -27,6 +27,7 @@ export default function App() {
   const [chat, setChat] = useState<ChatItem[]>([]);
   const [now, setNow] = useState(Date.now());
   const [connected, setConnected] = useState(socket.connected);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(Date.now()), 250);
@@ -61,14 +62,14 @@ export default function App() {
       <header className="topbar">
         <button className="back">‹</button>
         <Logo />
-        <div className="top-actions"><button>Add Cash</button><span className="profile">●</span></div>
+        <div className="top-actions"><button>Add Cash</button><span className="profile" aria-label="Profile">👤</span></div>
       </header>
       <div className="game-title-row">
         <div className="game-name">SkyRush</div>
-        <div className="balance"><span className={`connection ${connected ? "ok" : ""}`}>{statusLabel}</span><strong>{wallet.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> PKR <button>☰</button></div>
+        <div className="balance"><span className={`connection ${connected ? "ok" : ""}`}>{statusLabel}</span><strong>{wallet.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> PKR <button className="toolbar-button" aria-label="Menu">☰</button><button className="toolbar-button chat-symbol" aria-label="Chat" onClick={() => setChatOpen((value) => !value)}>◯</button></div>
       </div>
 
-      <main className="game-layout">
+      <main className={`game-layout ${chatOpen ? "chat-open" : ""}`}>
         <BetsList bets={round.bets} />
         <section className="center-column">
           <div className="history-strip">
@@ -83,6 +84,7 @@ export default function App() {
         </section>
         <ChatPanel chat={chat} online={round.online} />
       </main>
+      <button className="floating-chat" aria-label="Toggle chat" onClick={() => setChatOpen((value) => !value)}>💬</button>
     </div>
   );
 }

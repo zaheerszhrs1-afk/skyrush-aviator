@@ -52,3 +52,466 @@ button { color: inherit; }
 @media (max-width: 1250px){.game-layout{grid-template-columns:330px 1fr}.chat-panel{display:none}.balance{min-width:360px}.game-graph{min-height:360px}}
 @media (max-width: 900px){.topbar{height:64px;padding:0 12px}.brand-name{font-size:19px}.brand-mark{width:34px;height:39px}.game-title-row{height:42px}.balance{min-width:0;font-size:12px;padding:0 10px}.connection{display:none}.game-layout{display:flex;flex-direction:column;padding:4px}.center-column{order:1}.bets-card{order:2;max-height:420px}.game-graph{min-height:330px}.bet-panels{grid-template-columns:1fr}.top-actions button{display:none}.history-strip{gap:12px}.plane-position{width:146px;height:82px}}
 @media (max-width: 520px){.game-name{font-size:20px}.balance strong{font-size:12px}.game-graph{min-height:280px;border-radius:14px}.multiplier-block strong{font-size:58px}.bet-panel{border-radius:15px}.bet-main-row{grid-template-columns:135px 1fr;gap:7px}.primary-bet{min-height:78px;font-size:19px}.auto-row{grid-template-columns:1fr 1.3fr 60px}.bets-card{border-radius:15px}.topbar{gap:9px}.back{font-size:35px}.top-actions{gap:5px}.profile{width:34px;height:34px}.plane-position{width:128px;height:72px}}
+
+/* Desktop game layout matched to the supplied reference. */
+@media (min-width: 901px) {
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .app-shell {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    min-height: 620px;
+    overflow: hidden;
+    background: #08090b;
+  }
+
+  .topbar {
+    height: 72px;
+    gap: 12px;
+    padding: 0 18px;
+    background: #1c1d27;
+    border-top: 1px solid #4b4f42;
+    border-bottom: 0;
+  }
+
+  .back {
+    width: 28px;
+    padding: 0;
+    font-size: 42px;
+    font-weight: 300;
+    color: #f0f2f5;
+  }
+
+  .brand {
+    gap: 8px;
+  }
+
+  .brand-mark {
+    width: 34px;
+    height: 44px;
+    font-size: 25px;
+  }
+
+  .brand-name {
+    font-size: 22px;
+  }
+
+  .top-actions {
+    gap: 14px;
+  }
+
+  .top-actions button {
+    padding: 8px 4px;
+    color: #9498a1;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  .profile {
+    width: 40px;
+    height: 40px;
+    border: 0;
+    background: #174b28;
+    color: #e8f5eb;
+    font-size: 18px;
+  }
+
+  .game-title-row {
+    height: 45px;
+    background: #151719;
+    border-bottom: 1px solid #25282b;
+  }
+
+  .game-name {
+    padding-left: 10px;
+    font-size: 26px;
+    line-height: 1;
+  }
+
+  .balance {
+    min-width: 0;
+    padding: 0 10px 0 16px;
+    gap: 6px;
+    background: transparent;
+    font-size: 14px;
+  }
+
+  .balance strong {
+    font-size: 15px;
+  }
+
+  .connection {
+    margin-right: 8px;
+  }
+
+  .toolbar-button {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #8b9098;
+    cursor: pointer;
+  }
+
+  .chat-symbol {
+    font-size: 21px;
+    transform: scaleX(1.18);
+  }
+
+  .game-layout {
+    position: relative;
+    display: grid;
+    grid-template-columns: clamp(360px, 24vw, 450px) minmax(0, 1fr);
+    gap: 4px;
+    width: 100%;
+    height: calc(100vh - 117px);
+    min-height: 0;
+    padding: 4px;
+    overflow: hidden;
+  }
+
+  .bets-card {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border-color: #24272a;
+    border-radius: 20px;
+    background: #17191b;
+  }
+
+  .tabs {
+    height: 36px;
+    margin: 5px 8px 4px;
+    padding: 3px;
+    background: #101214;
+  }
+
+  .tabs button {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  .tabs button.active {
+    background: #313338;
+  }
+
+  .bets-summary {
+    min-height: 69px;
+    padding: 5px 16px 7px;
+  }
+
+  .bets-summary strong {
+    font-size: 17px;
+  }
+
+  .bets-summary span {
+    font-size: 12px;
+  }
+
+  .avatars {
+    height: 24px;
+    line-height: 24px;
+  }
+
+  .progress {
+    margin: 0 17px 8px;
+  }
+
+  .bets-head {
+    padding: 8px 17px;
+    font-size: 11px;
+  }
+
+  .bets-scroll {
+    padding: 0 8px;
+  }
+
+  .bet-row {
+    min-height: 35px;
+    margin-bottom: 4px;
+    padding: 5px 10px;
+    border-radius: 18px;
+    font-size: 12px;
+  }
+
+  .bet-row i {
+    width: 25px;
+    height: 25px;
+  }
+
+  .fair-footer {
+    min-height: 34px;
+    padding: 9px 18px;
+    background: #17191b;
+  }
+
+  .center-column {
+    display: grid;
+    grid-template-rows: 36px minmax(0, 1fr) 200px;
+    gap: 4px;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .history-strip {
+    height: 36px;
+    gap: 15px;
+    padding: 0 12px;
+    border-radius: 3px;
+    background: #111315;
+    font-size: 12px;
+  }
+
+  .history-strip button {
+    position: sticky;
+    right: 0;
+    display: grid;
+    min-width: 28px;
+    height: 20px;
+    place-items: center;
+    padding: 0;
+    background: #34373c;
+    font-size: 11px;
+  }
+
+  .game-graph {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    flex: none;
+    border-color: #2a2c2f;
+    border-radius: 20px;
+    background: #040608;
+  }
+
+  .rays {
+    inset: -25% -12% -14% -8%;
+    background: repeating-conic-gradient(
+      from 270deg at 8% 89%,
+      rgba(21, 26, 30, .94) 0deg 7deg,
+      rgba(3, 5, 7, .98) 7deg 15deg
+    );
+    opacity: .96;
+  }
+
+  .game-graph::after {
+    background: radial-gradient(circle at 53% 51%, rgba(20, 135, 205, .43), rgba(8, 37, 55, .18) 34%, transparent 64%);
+  }
+
+  .graph-glow {
+    inset: auto 11% 7% 10%;
+    height: 56%;
+  }
+
+  .curve {
+    inset: 2.5% 2% 1.5%;
+    width: 96%;
+    height: 96%;
+  }
+
+  .plane-position {
+    width: 176px;
+    height: 98px;
+  }
+
+  .multiplier-block strong {
+    font-size: clamp(72px, 6.3vw, 116px);
+  }
+
+  .multiplier-block small {
+    margin-top: 10px;
+  }
+
+  .fair-pill {
+    right: 12px;
+    bottom: 10px;
+    max-width: 220px;
+    overflow: hidden;
+    padding: 5px 10px;
+    border-color: #25282c;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bet-panels {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 4px;
+    width: 100%;
+    height: 200px;
+    min-height: 0;
+  }
+
+  .bet-panel {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding: 5px 12px 7px;
+    border-color: #24272a;
+    border-radius: 20px;
+    background: #1a1c1e;
+  }
+
+  .segmented {
+    width: min(230px, 62%);
+    height: 34px;
+    margin: 0 auto 7px;
+    padding: 3px;
+    background: #111315;
+  }
+
+  .segmented button {
+    padding: 4px;
+    font-size: 12px;
+  }
+
+  .bet-main-row {
+    grid-template-columns: minmax(132px, 150px) minmax(190px, 235px);
+    justify-content: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .amount-side {
+    justify-content: center;
+    gap: 5px;
+  }
+
+  .stepper {
+    grid-template-columns: 30px minmax(62px, 1fr) 30px;
+  }
+
+  .stepper button {
+    width: 28px;
+    height: 28px;
+    font-size: 17px;
+  }
+
+  .stepper input {
+    font-size: 16px;
+  }
+
+  .quick-grid {
+    gap: 4px;
+  }
+
+  .quick-grid button {
+    padding: 4px;
+    border-radius: 11px;
+    font-size: 13px;
+  }
+
+  .primary-bet {
+    min-height: 88px;
+    padding: 8px 12px;
+    border-width: 1px;
+    border-radius: 18px;
+    font-size: clamp(20px, 1.55vw, 27px);
+  }
+
+  .auto-row {
+    max-width: 510px;
+    margin: 7px auto 0;
+    padding-top: 6px;
+  }
+
+  .panel-message {
+    max-width: 510px;
+    margin: 1px auto 0;
+  }
+
+  .chat-panel {
+    position: fixed;
+    z-index: 50;
+    top: 121px;
+    right: 8px;
+    bottom: 8px;
+    display: flex;
+    width: min(360px, calc(100vw - 16px));
+    min-height: 0;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .58);
+    transform: translateX(calc(100% + 24px));
+    transition: transform .22s ease;
+  }
+
+  .game-layout.chat-open .chat-panel {
+    transform: translateX(0);
+  }
+
+  .floating-chat {
+    position: fixed;
+    z-index: 55;
+    right: 28px;
+    bottom: 82px;
+    display: grid;
+    width: 58px;
+    height: 58px;
+    place-items: center;
+    padding: 0;
+    border: 5px solid #55e46a;
+    border-radius: 50%;
+    background: #111417;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .45);
+    font-size: 25px;
+    cursor: pointer;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1350px) {
+  .game-layout {
+    grid-template-columns: 330px minmax(0, 1fr);
+  }
+
+  .bet-main-row {
+    grid-template-columns: minmax(104px, 132px) minmax(140px, 1fr);
+    gap: 8px;
+  }
+
+  .primary-bet {
+    font-size: 18px;
+  }
+
+  .floating-chat {
+    right: 18px;
+  }
+}
+
+@media (max-height: 720px) and (min-width: 901px) {
+  .center-column {
+    grid-template-rows: 34px minmax(0, 1fr) 174px;
+  }
+
+  .bet-panels {
+    height: 174px;
+  }
+
+  .primary-bet {
+    min-height: 72px;
+  }
+
+  .bet-panel {
+    padding-top: 3px;
+  }
+
+  .floating-chat {
+    bottom: 62px;
+  }
+}
+
+@media (max-width: 900px) {
+  .floating-chat {
+    display: none;
+  }
+}
