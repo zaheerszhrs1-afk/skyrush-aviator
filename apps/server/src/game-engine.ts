@@ -1,26 +1,42 @@
 import * as crypto from "node:crypto";
+import mongoose from "mongoose";
 import type { Server } from "socket.io";
+import { getWalletSnapshot } from "./finance.js";
+import {
+  GameBetModel,
+  GameRoundModel,
+  PlatformSettingsModel,
+  PlatformStateModel,
+  UserModel,
+  WalletTransactionModel
+} from "./models.js";
 import type { BetSlot, PublicBet, RoundPhase, RoundSnapshot, WalletSnapshot } from "./types.js";
-
-type WalletState = {
-  balance: number;
-  activeBets: Partial<Record<BetSlot, PublicBet>>;
-};
 
 const WAITING_MS = 8_000;
 const CRASHED_MS = 3_000;
 const TICK_MS = 100;
-const HOUSE_EDGE = 0.01;
-const MAX_CRASH = 100;
-const STARTING_BALANCE = 172_915.78;
+const MAX_CRASH = 1000;
 
-const names = [
-  "d***1", "d***8", "m***4", "s***9", "b***6", "c***f",
-  "n***b", "q***q", "5***0", "r***7", "a***2", "k***i"
-];
+const money = (value: number): number => Number(value.toFixed(2));
+
+interface RuntimeSettings {
+  houseEdgePercent: number;
+  reservePercent: number;
+  minBet: number;
+  maxBet: number;
+  maxCashoutMultiplier: number;
+}
+
+const defaultSettings: RuntimeSettings = {
+  houseEdgePercent: 1,
+  reservePercent: 30,
+  minBet: 16,
+  maxBet: 100_000,
+  maxCashoutMultiplier: 100
+};
 
 export class GameEngine {
-  private io: Server;
+  private readonly io: Server;
   private phase: RoundPhase = "WAITING";
   private roundId = crypto.randomUUID();
   private serverSeed = crypto.randomBytes(32).toString("hex");
@@ -29,30 +45,41 @@ export class GameEngine {
   private multiplier = 1;
   private startedAt: number | null = null;
   private phaseEndsAt: number | null = Date.now() + WAITING_MS;
-  private history: number[] = [3.94, 5.33, 3.44, 1.42, 1.44, 1.11, 38.48, 2.83, 4.46, 1.3, 1.5, 1.83, 1.16, 1.02, 22.36];
+  private history: number[] = [];
   private bets: PublicBet[] = [];
-  private wallets = new Map<string, WalletState>();
-  private timer: NodeJS.Timeout;
+  private activeBets = new Map<string, Partial<Record<BetSlot, PublicBet>>>();
+  private socketUsers = new Map<string, string>();
+  private settings: RuntimeSettings = defaultSettings;
+  private timer?: NodeJS.Timeout;
+  private ticking = false;
 
   constructor(io: Server) {
     this.io = io;
-    this.prepareRound();
-    this.timer = setInterval(() => this.tick(), TICK_MS);
+  }
+
+  async initialize(): Promise<void> {
+    await this.recoverInterruptedBets();
+    const recentRounds = await GameRoundModel.find({ phase: "CRASHED" })
+      .sort({ crashedAt: -1 })
+      .limit(30)
+      .select("crashPoint")
+      .lean();
+    this.history = recentRounds.map((round) => Number(round.crashPoint));
+    await this.prepareRound();
+    this.timer = setInterval(() => void this.tick(), TICK_MS);
   }
 
   stop(): void {
-    clearInterval(this.timer);
+    if (this.timer) clearInterval(this.timer);
   }
 
-  connect(socketId: string): WalletSnapshot {
-    if (!this.wallets.has(socketId)) {
-      this.wallets.set(socketId, { balance: STARTING_BALANCE, activeBets: {} });
-    }
-    return this.getWallet(socketId);
+  async connect(socketId: string, userId: string): Promise<WalletSnapshot> {
+    this.socketUsers.set(socketId, userId);
+    return this.getWallet(userId);
   }
 
   disconnect(socketId: string): void {
-    this.wallets.delete(socketId);
+    this.socketUsers.delete(socketId);
   }
 
   getSnapshot(): RoundSnapshot {
@@ -66,166 +93,357 @@ export class GameEngine {
       commit: this.commit,
       history: this.history,
       bets: [...this.bets].sort((a, b) => b.amount - a.amount).slice(0, 120),
-      online: this.io.sockets.sockets.size
+      online: this.socketUsers.size,
+      houseEdgePercent: this.settings.houseEdgePercent
     };
   }
 
-  getWallet(socketId: string): WalletSnapshot {
-    const wallet = this.wallets.get(socketId) ?? { balance: STARTING_BALANCE, activeBets: {} };
+  async getWallet(userId: string): Promise<WalletSnapshot> {
+    const wallet = await getWalletSnapshot(userId);
     return {
-      balance: Number(wallet.balance.toFixed(2)),
-      activeBets: wallet.activeBets
+      ...wallet,
+      activeBets: this.activeBets.get(userId) ?? {}
     };
   }
 
-  placeBet(socketId: string, slot: BetSlot, amountInput: number): { ok: boolean; message: string } {
-    const amount = Number(amountInput.toFixed(2));
-    const wallet = this.wallets.get(socketId);
-
-    if (!wallet) return { ok: false, message: "Wallet not initialized." };
+  async placeBet(userId: string, slot: BetSlot, amountInput: number): Promise<{ ok: boolean; message: string }> {
+    const amount = money(Number(amountInput));
     if (this.phase !== "WAITING") return { ok: false, message: "Betting is closed for this round." };
-    if (!Number.isFinite(amount) || amount < 16) return { ok: false, message: "Minimum bet is 16 PKR." };
-    if (amount > wallet.balance) return { ok: false, message: "Insufficient balance." };
-    if (wallet.activeBets[slot]) return { ok: false, message: `A ${slot} bet is already active.` };
+    if (!Number.isFinite(amount) || amount < this.settings.minBet) {
+      return { ok: false, message: `Minimum bet is ${this.settings.minBet.toFixed(2)} PKR.` };
+    }
+    if (amount > this.settings.maxBet) {
+      return { ok: false, message: `Maximum bet is ${this.settings.maxBet.toFixed(2)} PKR.` };
+    }
+    if (this.activeBets.get(userId)?.[slot]) return { ok: false, message: `A ${slot} bet is already active.` };
+
+    const riskCheck = await this.checkRiskCapacity(amount);
+    if (!riskCheck.ok) return riskCheck;
+
+    const user = await UserModel.findById(userId).select("name").lean();
+    if (!user) return { ok: false, message: "User account not found." };
 
     const bet: PublicBet = {
       id: crypto.randomUUID(),
-      player: this.maskSocket(socketId),
+      player: this.maskName(String(user.name)),
       amount,
       slot,
       status: "ACTIVE"
     };
 
-    wallet.balance -= amount;
-    wallet.activeBets[slot] = bet;
+    try {
+      await mongoose.connection.transaction(async (session) => {
+        const updatedUser = await UserModel.findOneAndUpdate(
+          { _id: userId, status: "ACTIVE", balance: { $gte: amount } },
+          { $inc: { balance: -amount } },
+          { new: true, session }
+        );
+        if (!updatedUser) throw new Error("Insufficient balance.");
+
+        await GameBetModel.create(
+          [{
+            betId: bet.id,
+            roundId: this.roundId,
+            userId,
+            player: bet.player,
+            slot,
+            amount,
+            status: "ACTIVE"
+          }],
+          { session }
+        );
+
+        await PlatformStateModel.updateOne(
+          { key: "global" },
+          { $inc: { gameProfit: amount } },
+          { session, upsert: true }
+        );
+        await GameRoundModel.updateOne({ roundId: this.roundId }, { $inc: { totalStake: amount } }, { session });
+        await WalletTransactionModel.create(
+          [{
+            userId,
+            type: "BET_DEBIT",
+            amount: -amount,
+            balanceAfter: money(updatedUser.balance),
+            lockedBalanceAfter: money(updatedUser.lockedBalance),
+            referenceType: "BET",
+            referenceId: bet.id,
+            description: `Bet placed for round ${this.roundId}`,
+            metadata: { roundId: this.roundId, slot }
+          }],
+          { session }
+        );
+      });
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : "Unable to place bet." };
+    }
+
+    const userBets = this.activeBets.get(userId) ?? {};
+    userBets[slot] = bet;
+    this.activeBets.set(userId, userBets);
     this.bets.push(bet);
     this.emitState();
-    this.emitWallet(socketId);
+    await this.emitWalletForUser(userId);
     return { ok: true, message: "Bet placed." };
   }
 
-  cashOut(socketId: string, slot: BetSlot): { ok: boolean; message: string } {
-    const wallet = this.wallets.get(socketId);
-    const bet = wallet?.activeBets[slot];
-
-    if (!wallet || !bet) return { ok: false, message: "No active bet found." };
+  async cashOut(userId: string, slot: BetSlot): Promise<{ ok: boolean; message: string }> {
+    const bet = this.activeBets.get(userId)?.[slot];
+    if (!bet) return { ok: false, message: "No active bet found." };
     if (this.phase !== "RUNNING") return { ok: false, message: "Cash-out is available while the plane is flying." };
     if (bet.status !== "ACTIVE") return { ok: false, message: "Bet has already been settled." };
 
-    const lockedMultiplier = Math.max(1, Number(this.multiplier.toFixed(2)));
-    const payout = Number((bet.amount * lockedMultiplier).toFixed(2));
+    const lockedMultiplier = Math.min(
+      this.settings.maxCashoutMultiplier,
+      Math.max(1, Number(this.multiplier.toFixed(2)))
+    );
+    const payout = money(bet.amount * lockedMultiplier);
+
+    try {
+      await mongoose.connection.transaction(async (session) => {
+        const dbBet = await GameBetModel.findOneAndUpdate(
+          { betId: bet.id, status: "ACTIVE" },
+          { $set: { status: "CASHED_OUT", cashoutMultiplier: lockedMultiplier, payout, settledAt: new Date() } },
+          { new: true, session }
+        );
+        if (!dbBet) throw new Error("Bet has already been settled.");
+
+        const updatedUser = await UserModel.findByIdAndUpdate(
+          userId,
+          { $inc: { balance: payout } },
+          { new: true, session }
+        );
+        if (!updatedUser) throw new Error("User account not found.");
+
+        await PlatformStateModel.updateOne(
+          { key: "global" },
+          { $inc: { gameProfit: -payout } },
+          { session, upsert: true }
+        );
+        await GameRoundModel.updateOne({ roundId: this.roundId }, { $inc: { totalPayout: payout } }, { session });
+        await WalletTransactionModel.create(
+          [{
+            userId,
+            type: "CASHOUT_CREDIT",
+            amount: payout,
+            balanceAfter: money(updatedUser.balance),
+            lockedBalanceAfter: money(updatedUser.lockedBalance),
+            referenceType: "BET",
+            referenceId: bet.id,
+            description: `Cashed out at ${lockedMultiplier.toFixed(2)}x`,
+            metadata: { roundId: this.roundId, slot, multiplier: lockedMultiplier }
+          }],
+          { session }
+        );
+      });
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : "Unable to cash out." };
+    }
+
     bet.status = "CASHED_OUT";
     bet.cashoutMultiplier = lockedMultiplier;
     bet.payout = payout;
-    wallet.balance += payout;
-    delete wallet.activeBets[slot];
+    const userBets = this.activeBets.get(userId);
+    if (userBets) {
+      delete userBets[slot];
+      this.activeBets.set(userId, userBets);
+    }
 
     this.emitState();
-    this.emitWallet(socketId);
+    await this.emitWalletForUser(userId);
     return { ok: true, message: `Cashed out at ${lockedMultiplier.toFixed(2)}x.` };
   }
 
-  private tick(): void {
-    const now = Date.now();
-
-    if (this.phase === "WAITING" && this.phaseEndsAt && now >= this.phaseEndsAt) {
-      this.phase = "RUNNING";
-      this.startedAt = now;
-      this.phaseEndsAt = null;
-      this.multiplier = 1;
-      this.io.emit("round:started", { roundId: this.roundId });
+  async emitWalletForUser(userId: string): Promise<void> {
+    const wallet = await this.getWallet(userId);
+    for (const [socketId, connectedUserId] of this.socketUsers.entries()) {
+      if (connectedUserId === userId) this.io.to(socketId).emit("wallet:state", wallet);
     }
-
-    if (this.phase === "RUNNING" && this.startedAt) {
-      const elapsed = now - this.startedAt;
-      this.multiplier = Number(Math.exp(elapsed * 0.00006).toFixed(2));
-
-      if (this.multiplier >= this.crashPoint) {
-        this.multiplier = this.crashPoint;
-        this.phase = "CRASHED";
-        this.phaseEndsAt = now + CRASHED_MS;
-        this.settleLosses();
-        this.history = [this.crashPoint, ...this.history].slice(0, 30);
-        this.io.emit("round:revealed", {
-          roundId: this.roundId,
-          crashPoint: this.crashPoint,
-          serverSeed: this.serverSeed,
-          commit: this.commit
-        });
-      }
-    }
-
-    if (this.phase === "CRASHED" && this.phaseEndsAt && now >= this.phaseEndsAt) {
-      this.prepareRound();
-    }
-
-    this.emitState();
   }
 
-  private prepareRound(): void {
+  private async tick(): Promise<void> {
+    if (this.ticking) return;
+    this.ticking = true;
+    try {
+      const now = Date.now();
+
+      if (this.phase === "WAITING" && this.phaseEndsAt && now >= this.phaseEndsAt) {
+        this.phase = "RUNNING";
+        this.startedAt = now;
+        this.phaseEndsAt = null;
+        this.multiplier = 1;
+        await GameRoundModel.updateOne(
+          { roundId: this.roundId },
+          { $set: { phase: "RUNNING", startedAt: new Date(now) } }
+        );
+        this.io.emit("round:started", { roundId: this.roundId });
+      }
+
+      if (this.phase === "RUNNING" && this.startedAt) {
+        const elapsed = now - this.startedAt;
+        this.multiplier = Number(Math.exp(elapsed * 0.00006).toFixed(2));
+
+        if (this.multiplier >= this.crashPoint) {
+          this.multiplier = this.crashPoint;
+          this.phase = "CRASHED";
+          this.phaseEndsAt = now + CRASHED_MS;
+          await this.settleLosses();
+          this.history = [this.multiplier, ...this.history].slice(0, 30);
+          await GameRoundModel.updateOne(
+            { roundId: this.roundId },
+            { $set: { phase: "CRASHED", crashPoint: this.multiplier, crashedAt: new Date(now) } }
+          );
+          this.io.emit("round:revealed", {
+            roundId: this.roundId,
+            crashPoint: this.multiplier,
+            serverSeed: this.serverSeed,
+            commit: this.commit
+          });
+        }
+      }
+
+      if (this.phase === "CRASHED" && this.phaseEndsAt && now >= this.phaseEndsAt) {
+        await this.prepareRound();
+      }
+
+      this.emitState();
+    } catch (error) {
+      console.error("Game tick failed:", error);
+    } finally {
+      this.ticking = false;
+    }
+  }
+
+  private async prepareRound(): Promise<void> {
+    this.settings = await this.loadSettings();
     this.phase = "WAITING";
     this.roundId = crypto.randomUUID();
     this.serverSeed = crypto.randomBytes(32).toString("hex");
     this.commit = this.hash(this.serverSeed);
-    this.crashPoint = this.calculateCrashPoint(this.serverSeed, this.roundId);
+    this.crashPoint = Math.min(
+      this.settings.maxCashoutMultiplier,
+      this.calculateCrashPoint(this.serverSeed, this.roundId, this.settings.houseEdgePercent)
+    );
     this.multiplier = 1;
     this.startedAt = null;
     this.phaseEndsAt = Date.now() + WAITING_MS;
-    this.bets = this.createBotBets();
+    this.bets = [];
+    this.activeBets.clear();
 
-    for (const wallet of this.wallets.values()) {
-      wallet.activeBets = {};
-    }
+    await GameRoundModel.create({
+      roundId: this.roundId,
+      commit: this.commit,
+      serverSeed: this.serverSeed,
+      crashPoint: this.crashPoint,
+      phase: "WAITING",
+      houseEdgePercent: this.settings.houseEdgePercent,
+      totalStake: 0,
+      totalPayout: 0
+    });
   }
 
-  private settleLosses(): void {
+  private async settleLosses(): Promise<void> {
+    await GameBetModel.updateMany(
+      { roundId: this.roundId, status: "ACTIVE" },
+      { $set: { status: "LOST", settledAt: new Date() } }
+    );
     for (const bet of this.bets) {
       if (bet.status === "ACTIVE") bet.status = "LOST";
     }
-    for (const [socketId, wallet] of this.wallets.entries()) {
-      wallet.activeBets = {};
-      this.emitWallet(socketId);
+    const affectedUsers = [...this.activeBets.keys()];
+    this.activeBets.clear();
+    for (const userId of affectedUsers) await this.emitWalletForUser(userId);
+  }
+
+  private async recoverInterruptedBets(): Promise<void> {
+    const interrupted = await GameBetModel.find({ status: "ACTIVE" }).lean();
+    for (const bet of interrupted) {
+      await mongoose.connection.transaction(async (session) => {
+        const updatedBet = await GameBetModel.findOneAndUpdate(
+          { _id: bet._id, status: "ACTIVE" },
+          { $set: { status: "REFUNDED", settledAt: new Date() } },
+          { new: true, session }
+        );
+        if (!updatedBet) return;
+        const user = await UserModel.findByIdAndUpdate(
+          bet.userId,
+          { $inc: { balance: bet.amount } },
+          { new: true, session }
+        );
+        if (!user) return;
+        await PlatformStateModel.updateOne(
+          { key: "global" },
+          { $inc: { gameProfit: -bet.amount } },
+          { session, upsert: true }
+        );
+        await WalletTransactionModel.create(
+          [{
+            userId: bet.userId,
+            type: "BET_REFUND",
+            amount: bet.amount,
+            balanceAfter: money(user.balance),
+            lockedBalanceAfter: money(user.lockedBalance),
+            referenceType: "BET",
+            referenceId: bet.betId,
+            description: "Bet refunded after interrupted server round"
+          }],
+          { session }
+        );
+      });
     }
   }
 
-  private calculateCrashPoint(seed: string, roundId: string): number {
+  private async checkRiskCapacity(amount: number): Promise<{ ok: boolean; message: string }> {
+    const state = await PlatformStateModel.findOne({ key: "global" }).lean();
+    const bankroll = Math.max(0, Number(state?.houseBankroll ?? 0) + Number(state?.gameProfit ?? 0));
+    const reserve = bankroll * (this.settings.reservePercent / 100);
+    const availableRisk = Math.max(0, bankroll - reserve);
+    const currentExposure = this.bets
+      .filter((bet) => bet.status === "ACTIVE")
+      .reduce((sum, bet) => sum + bet.amount * (this.settings.maxCashoutMultiplier - 1), 0);
+    const newExposure = amount * (this.settings.maxCashoutMultiplier - 1);
+
+    if (bankroll <= 0) {
+      return { ok: false, message: "Game bankroll is not funded. Contact support." };
+    }
+    if (currentExposure + newExposure > availableRisk) {
+      return { ok: false, message: "Bet exceeds the platform's current payout reserve." };
+    }
+    return { ok: true, message: "Risk capacity available." };
+  }
+
+  private async loadSettings(): Promise<RuntimeSettings> {
+    const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
+    return {
+      houseEdgePercent: Number(settings?.houseEdgePercent ?? defaultSettings.houseEdgePercent),
+      reservePercent: Number(settings?.reservePercent ?? defaultSettings.reservePercent),
+      minBet: Number(settings?.minBet ?? defaultSettings.minBet),
+      maxBet: Number(settings?.maxBet ?? defaultSettings.maxBet),
+      maxCashoutMultiplier: Number(settings?.maxCashoutMultiplier ?? defaultSettings.maxCashoutMultiplier)
+    };
+  }
+
+  private calculateCrashPoint(seed: string, roundId: string, houseEdgePercent: number): number {
     const digest = crypto.createHmac("sha256", seed).update(roundId).digest("hex");
     const integer = Number.parseInt(digest.slice(0, 13), 16);
     const max = 16 ** 13;
     const random = integer / max;
-    const raw = (1 - HOUSE_EDGE) / Math.max(0.000001, 1 - random);
+    const edge = Math.min(0.2, Math.max(0, houseEdgePercent / 100));
+    const raw = (1 - edge) / Math.max(0.000001, 1 - random);
     return Math.min(MAX_CRASH, Math.max(1, Math.floor(raw * 100) / 100));
-  }
-
-  private createBotBets(): PublicBet[] {
-    return Array.from({ length: 38 }, (_, index) => {
-      const amountOptions = [16, 64, 160, 320, 1600, 12_836.13, 14_148.45, 16_000.05];
-      const amount = amountOptions[Math.floor(Math.random() * amountOptions.length)] ?? 16;
-      return {
-        id: crypto.randomUUID(),
-        player: names[index % names.length] ?? "p***r",
-        amount,
-        slot: index % 2 === 0 ? "left" : "right",
-        status: "ACTIVE",
-        isBot: true
-      };
-    });
   }
 
   private emitState(): void {
     this.io.emit("round:state", this.getSnapshot());
   }
 
-  private emitWallet(socketId: string): void {
-    this.io.to(socketId).emit("wallet:state", this.getWallet(socketId));
-  }
-
   private hash(value: string): string {
     return crypto.createHash("sha256").update(value).digest("hex");
   }
 
-  private maskSocket(socketId: string): string {
-    const clean = socketId.replace(/[^a-zA-Z0-9]/g, "");
-    return `${clean.slice(0, 1).toLowerCase() || "u"}***${clean.slice(-1).toLowerCase() || "r"}`;
+  private maskName(name: string): string {
+    const clean = name.trim();
+    if (clean.length <= 2) return `${clean.slice(0, 1) || "u"}***`;
+    return `${clean.slice(0, 1)}***${clean.slice(-1)}`;
   }
 }

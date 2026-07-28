@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import type { PublicBet } from "../types";
 
-type Props = { bets: PublicBet[] };
+type Props = { bets: PublicBet[]; online: number };
 
-export function BetsList({ bets }: Props) {
+export function BetsList({ bets, online }: Props) {
   const [tab, setTab] = useState<"all" | "previous" | "top">("all");
   const rows = useMemo(() => {
     const source = tab === "top" ? [...bets].sort((a, b) => b.amount - a.amount) : bets;
@@ -19,7 +19,7 @@ export function BetsList({ bets }: Props) {
         <button className={tab === "top" ? "active" : ""} onClick={() => setTab("top")}>Top</button>
       </div>
       <div className="bets-summary">
-        <div><span className="avatars">🧑🏽‍🚀🧑🏻‍🚀🧑🏿‍🚀</span><strong>{bets.length + 740}/{bets.length + 970} Bets</strong></div>
+        <div><span className="avatars">🧑🏽‍🚀🧑🏻‍🚀🧑🏿‍🚀</span><strong>{bets.length} Bets · {online} Online</strong></div>
         <div><strong>{totalWin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><span>Total win PKR</span></div>
       </div>
       <div className="progress"><span style={{ width: `${Math.min(100, 18 + bets.length)}%` }} /></div>
@@ -34,7 +34,7 @@ export function BetsList({ bets }: Props) {
           </div>
         ))}
       </div>
-      <div className="fair-footer">🛡 Provably Fair Demo <span>Powered by SKYRUSH</span></div>
+      <div className="fair-footer">🛡 Provably Fair <span>Powered by SKYRUSH</span></div>
     </aside>
   );
 }

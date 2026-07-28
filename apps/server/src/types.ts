@@ -6,10 +6,9 @@ export interface PublicBet {
   player: string;
   amount: number;
   slot: BetSlot;
-  status: "ACTIVE" | "CASHED_OUT" | "LOST";
+  status: "ACTIVE" | "CASHED_OUT" | "LOST" | "REFUNDED";
   cashoutMultiplier?: number;
   payout?: number;
-  isBot?: boolean;
 }
 
 export interface RoundSnapshot {
@@ -23,9 +22,11 @@ export interface RoundSnapshot {
   history: number[];
   bets: PublicBet[];
   online: number;
+  houseEdgePercent: number;
 }
 
 export interface WalletSnapshot {
   balance: number;
+  lockedBalance: number;
   activeBets: Partial<Record<BetSlot, PublicBet>>;
 }
