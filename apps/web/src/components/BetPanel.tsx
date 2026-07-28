@@ -7,11 +7,18 @@ type Props = {
   round: RoundSnapshot;
   wallet: WalletSnapshot;
   accountMode: AccountMode;
+  onNotify: (message: string, type?: "error" | "success") => void;
+};
+
+type BetActionResult = {
+  ok: boolean;
+  message: string;
+  queued?: boolean;
 };
 
 const quickAmounts = [64, 160, 320, 1600];
 
-export function BetPanel({ slot, round, wallet, accountMode }: Props) {
+export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) {
   const [mode, setMode] = useState<"bet" | "auto">("bet");
   const [amount, setAmount] = useState(16);
   const [autoBet, setAutoBet] = useState(false);
@@ -19,6 +26,8 @@ export function BetPanel({ slot, round, wallet, accountMode }: Props) {
   const [autoAt, setAutoAt] = useState(1.1);
   const [message, setMessage] = useState("");
   const activeBet = accountMode === "DEMO" ? wallet.demoActiveBets[slot] : wallet.activeBets[slot];
+  const queuedBet = accountMode === "REAL" ? wallet.queuedBets[slot] : undefined;
+  const acceptedBet = queuedBet ?? (activeBet && round.phase !== "RUNNING" ? activeBet : undefined);
   const payableMultiplier = activeBet
     ? Math.min(round.multiplier, activeBet.guaranteedMaxMultiplier ?? round.multiplier)
     : round.multiplier;
@@ -32,57 +41,70 @@ export function BetPanel({ slot, round, wallet, accountMode }: Props) {
     setAutoCashOut(false);
   }, [accountMode]);
 
+  const handleResult = (result: BetActionResult) => {
+    if (!result.ok) {
+      setMessage("");
+      onNotify(result.message, "error");
+      return;
+    }
+    setMessage(result.message);
+  };
+
   useEffect(() => {
     if (!autoCashOut || !activeBet || round.phase !== "RUNNING" || round.multiplier < autoAt) return;
-    socket.emit("bet:cashout", { slot, mode: accountMode });
+    socket.emit("bet:cashout", { slot, mode: accountMode }, (result: BetActionResult) => handleResult(result));
   }, [accountMode, autoAt, autoCashOut, activeBet, round.multiplier, round.phase, slot]);
 
   useEffect(() => {
-    if (!autoBet || !round.roundId || round.phase !== "WAITING" || activeBet) return;
+    if (!autoBet || !round.roundId || activeBet || queuedBet) return;
     const timer = window.setTimeout(() => {
-      socket.emit("bet:place", { slot, amount, mode: accountMode }, (result: { ok: boolean; message: string }) => setMessage(result.message));
+      socket.emit("bet:place", { slot, amount, mode: accountMode }, (result: BetActionResult) => handleResult(result));
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [accountMode, activeBet, amount, autoBet, round.phase, round.roundId, slot]);
+  }, [accountMode, activeBet, amount, autoBet, queuedBet, round.phase, round.roundId, slot]);
 
   const primaryAction = () => {
     if (activeBet && round.phase === "RUNNING") {
-      socket.emit("bet:cashout", { slot, mode: accountMode }, (result: { ok: boolean; message: string }) => setMessage(result.message));
+      socket.emit("bet:cashout", { slot, mode: accountMode }, (result: BetActionResult) => handleResult(result));
       return;
     }
-    socket.emit("bet:place", { slot, amount, mode: accountMode }, (result: { ok: boolean; message: string }) => setMessage(result.message));
+    socket.emit("bet:place", { slot, amount, mode: accountMode }, (result: BetActionResult) => handleResult(result));
   };
 
   const prefix = accountMode === "DEMO" ? "Demo " : "";
   const buttonLabel = activeBet && round.phase === "RUNNING"
     ? `${prefix}Cash Out ${estimatedCashout.toFixed(2)} PKR`
-    : activeBet
-      ? `${prefix}bet placed ${activeBet.amount.toFixed(2)} PKR`
-      : `${prefix}Bet ${amount.toFixed(2)} PKR`;
+    : queuedBet
+      ? `Accepted ${queuedBet.amount.toFixed(2)} PKR — Next round`
+      : activeBet
+        ? `${prefix}bet placed ${activeBet.amount.toFixed(2)} PKR`
+        : `${prefix}Bet ${amount.toFixed(2)} PKR`;
+
+  const controlsLocked = Boolean(acceptedBet);
 
   return (
     <section className={`bet-panel ${accountMode === "DEMO" ? "demo-bet-panel" : ""}`}>
       <div className="segmented">
-        <button className={mode === "bet" ? "active" : ""} onClick={() => setMode("bet")}>Bet</button>
-        <button className={mode === "auto" ? "active" : ""} onClick={() => setMode("auto")}>Auto</button>
+        <button disabled={controlsLocked} className={mode === "bet" ? "active" : ""} onClick={() => setMode("bet")}>Bet</button>
+        <button disabled={controlsLocked} className={mode === "auto" ? "active" : ""} onClick={() => setMode("auto")}>Auto</button>
       </div>
 
       <div className="bet-main-row">
         <div className="amount-side">
           <div className="stepper">
-            <button onClick={() => setAmount((value) => Math.max(16, value - 16))}>−</button>
-            <input value={amount} onChange={(event) => setAmount(Math.max(16, Number(event.target.value) || 16))} />
-            <button onClick={() => setAmount((value) => value + 16)}>+</button>
+            <button disabled={controlsLocked} onClick={() => setAmount((value) => Math.max(16, value - 16))}>−</button>
+            <input disabled={controlsLocked} value={amount} onChange={(event) => setAmount(Math.max(16, Number(event.target.value) || 16))} />
+            <button disabled={controlsLocked} onClick={() => setAmount((value) => value + 16)}>+</button>
           </div>
           <div className="quick-grid">
-            {quickAmounts.map((value) => <button key={value} onClick={() => setAmount(value)}>{value.toLocaleString()}</button>)}
+            {quickAmounts.map((value) => <button disabled={controlsLocked} key={value} onClick={() => setAmount(value)}>{value.toLocaleString()}</button>)}
           </div>
         </div>
 
         <button
-          className={`primary-bet ${activeBet && round.phase === "RUNNING" ? "cashout" : ""}`}
+          className={`primary-bet ${activeBet && round.phase === "RUNNING" ? "cashout" : ""} ${acceptedBet ? "accepted" : ""}`}
           onClick={primaryAction}
-          disabled={Boolean(activeBet) && round.phase !== "RUNNING"}
+          disabled={Boolean(acceptedBet)}
         >
           {buttonLabel}
         </button>
@@ -96,10 +118,11 @@ export function BetPanel({ slot, round, wallet, accountMode }: Props) {
         </div>
       )}
       {accountMode === "DEMO" && <div className="panel-message demo-message">Virtual funds only — no deposits, withdrawals, loss pool, or commission wallet changes.</div>}
+      {queuedBet && <div className="panel-message queued-message">Accepted and locked for the next round.</div>}
       {activeBet?.guaranteedMaxMultiplier && (
         <div className="panel-message">{accountMode === "DEMO" ? "Demo" : "Guaranteed peer-funded"} cash-out up to {activeBet.guaranteedMaxMultiplier.toFixed(2)}x</div>
       )}
-      <div className="panel-message">{message}</div>
+      {!queuedBet && <div className="panel-message">{message}</div>}
     </section>
   );
 }

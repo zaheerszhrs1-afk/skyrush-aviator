@@ -229,7 +229,7 @@ const gameBetSchema = new Schema(
     payoutMinor: { type: Number, default: 0 },
     commissionMinor: { type: Number, default: 0 },
     amount: { type: Number, required: true },
-    status: { type: String, enum: ["ACTIVE", "CASHED_OUT", "LOST", "REFUNDED"], default: "ACTIVE", index: true },
+    status: { type: String, enum: ["QUEUED", "ACTIVE", "CASHED_OUT", "LOST", "REFUNDED"], default: "ACTIVE", index: true },
     cashoutMultiplier: { type: Number },
     payout: { type: Number, default: 0 },
     settledAt: { type: Date }

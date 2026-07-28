@@ -1,11 +1,24 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChatItem } from "../types";
 import { socket } from "../lib/socket";
 
-type Props = { chat: ChatItem[]; online: number };
+type Props = {
+  chat: ChatItem[];
+  online: number;
+  onClose: () => void;
+};
 
-export function ChatPanel({ chat, online }: Props) {
+const chatAvatars = ["🌋", "🌎", "🪐", "🎭", "🍀", "🌙", "⚡", "🎯"];
+
+export function ChatPanel({ chat, online, onClose }: Props) {
   const [message, setMessage] = useState("");
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
+  }, [chat.length]);
 
   const send = () => {
     const trimmed = message.trim();
@@ -15,20 +28,40 @@ export function ChatPanel({ chat, online }: Props) {
   };
 
   return (
-    <aside className="chat-panel">
-      <header><span className="online-dot" />{online}<button>×</button></header>
-      <div className="chat-scroll">
+    <aside className="chat-panel" aria-label="Live chat">
+      <header className="chat-header">
+        <div className="chat-online-count"><span className="online-dot" />{online}</div>
+        <button className="chat-close" type="button" aria-label="Close chat" onClick={onClose}>×</button>
+      </header>
+
+      <div className="chat-scroll" ref={scrollRef}>
         {chat.map((item, index) => (
-          <div className="chat-message" key={item.id}>
-            <span className="chat-avatar">{["🍀", "🌎", "🌌", "🎭", "🪐"][index % 5]}</span>
+          <article className="chat-message" key={item.id}>
+            <span className="chat-avatar" aria-hidden="true">{chatAvatars[index % chatAvatars.length]}</span>
             <p><strong>{item.player}</strong> {item.message}</p>
-          </div>
+            <span className="chat-like" aria-hidden="true">♡</span>
+          </article>
         ))}
+        {chat.length === 0 && <p className="chat-empty">No messages yet. Start the conversation.</p>}
       </div>
+
       <div className="chat-input">
-        <input value={message} maxLength={160} placeholder="Reply" onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => event.key === "Enter" && send()} />
-        <button onClick={send}>↵</button>
-        <small>{160 - message.length}</small>
+        <input
+          value={message}
+          maxLength={160}
+          placeholder="Reply"
+          aria-label="Chat message"
+          onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) send();
+          }}
+        />
+        <button className="chat-send" type="button" aria-label="Send message" onClick={send}>↵</button>
+        <div className="chat-input-footer">
+          <span aria-hidden="true">☺</span>
+          <span className="gif-chip">GIF</span>
+          <small>{160 - message.length}</small>
+        </div>
       </div>
     </aside>
   );

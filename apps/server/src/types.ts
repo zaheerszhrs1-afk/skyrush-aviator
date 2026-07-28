@@ -7,7 +7,7 @@ export interface PublicBet {
   player: string;
   amount: number;
   slot: BetSlot;
-  status: "ACTIVE" | "CASHED_OUT" | "LOST" | "REFUNDED";
+  status: "QUEUED" | "ACTIVE" | "CASHED_OUT" | "LOST" | "REFUNDED";
   cashoutMultiplier?: number;
   payout?: number;
   guaranteedMaxMultiplier?: number;
@@ -44,6 +44,7 @@ export interface WalletSnapshot {
   pendingRewards: number;
   totalBalance: number;
   activeBets: Partial<Record<BetSlot, PublicBet>>;
+  queuedBets: Partial<Record<BetSlot, PublicBet>>;
   demoBalance: number;
   demoActiveBets: Partial<Record<BetSlot, PublicBet>>;
 }

@@ -39,6 +39,7 @@ const emptyWallet: WalletSnapshot = {
   pendingRewards: 0,
   totalBalance: 0,
   activeBets: {},
+  queuedBets: {},
   demoBalance: 0,
   demoActiveBets: {}
 };
@@ -57,6 +58,15 @@ export default function App() {
   const [adminView, setAdminView] = useState(window.location.pathname.startsWith("/admin"));
   const [accountMode, setAccountMode] = useState<AccountMode>("REAL");
   const [demoResetBusy, setDemoResetBusy] = useState(false);
+  const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "error" | "success" }>>([]);
+
+  const notify = (message: string, type: "error" | "success" = "error") => {
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    setToasts((items) => [...items.slice(-3), { id, message, type }]);
+    window.setTimeout(() => {
+      setToasts((items) => items.filter((item) => item.id !== id));
+    }, 4200);
+  };
 
   useEffect(() => {
     void apiRequest<{ user: AuthUser }>("/api/auth/me")
@@ -80,6 +90,9 @@ export default function App() {
     const onConnect = () => setConnected(true);
     const onDisconnect = () => setConnected(false);
     const onConnectError = () => setConnected(false);
+    const onQueueResult = (payload: { ok?: boolean; message?: string }) => {
+      if (payload?.ok === false && payload.message) notify(payload.message, "error");
+    };
 
     socket.on("round:state", onRound);
     socket.on("wallet:state", onWallet);
@@ -88,6 +101,7 @@ export default function App() {
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
     socket.on("connect_error", onConnectError);
+    socket.on("bet:queue-result", onQueueResult);
     socket.connect();
 
     return () => {
@@ -99,6 +113,7 @@ export default function App() {
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
       socket.off("connect_error", onConnectError);
+      socket.off("bet:queue-result", onQueueResult);
       socket.disconnect();
     };
   }, [user?.id]);
@@ -124,7 +139,7 @@ export default function App() {
       const result = await apiRequest<{ wallet: WalletSnapshot }>("/api/demo/reset", { method: "POST" });
       setWallet(result.wallet);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Unable to reset demo balance.");
+      notify(error instanceof Error ? error.message : "Unable to reset demo balance.", "error");
     } finally {
       setDemoResetBusy(false);
     }
@@ -146,6 +161,15 @@ export default function App() {
 
   return (
     <div className={`app-shell ${accountMode === "DEMO" ? "demo-mode" : ""}`}>
+      <div className="toast-stack" aria-live="assertive" aria-atomic="true">
+        {toasts.map((toast) => (
+          <div className={`app-toast ${toast.type}`} key={toast.id}>
+            <span aria-hidden="true">{toast.type === "error" ? "!" : "✓"}</span>
+            <p>{toast.message}</p>
+            <button aria-label="Dismiss message" onClick={() => setToasts((items) => items.filter((item) => item.id !== toast.id))}>×</button>
+          </div>
+        ))}
+      </div>
       <header className="topbar">
         <button className="back">‹</button>
         <Logo />
@@ -201,13 +225,13 @@ export default function App() {
           </div>
           <GameGraph round={round} now={now} />
           <div className="bet-panels">
-            <BetPanel slot="left" round={round} wallet={wallet} accountMode={accountMode} />
-            <BetPanel slot="right" round={round} wallet={wallet} accountMode={accountMode} />
+            <BetPanel slot="left" round={round} wallet={wallet} accountMode={accountMode} onNotify={notify} />
+            <BetPanel slot="right" round={round} wallet={wallet} accountMode={accountMode} onNotify={notify} />
           </div>
         </section>
-        <ChatPanel chat={chat} online={visibleOnline} />
+        <ChatPanel chat={chat} online={visibleOnline} onClose={() => setChatOpen(false)} />
       </main>
-      <button className="floating-chat" aria-label="Toggle chat" onClick={() => setChatOpen((value) => !value)}>💬</button>
+      {!chatOpen && <button className="floating-chat" aria-label="Open chat" onClick={() => setChatOpen(true)}>💬</button>}
       {financeOpen && accountMode === "REAL" && <FinanceModal wallet={wallet} onClose={() => setFinanceOpen(false)} onWalletRefresh={setWallet} />}
     </div>
   );

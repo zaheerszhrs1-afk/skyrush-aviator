@@ -22,6 +22,7 @@ const WAITING_MS = 8_000;
 const CRASHED_MS = 3_000;
 const TICK_MS = 100;
 const MAX_CRASH = 1000;
+const QUEUED_ROUND_ID = "__NEXT_ROUND__";
 
 interface RuntimeSettings {
   houseEdgePercent: number;
@@ -125,6 +126,7 @@ export class GameEngine {
   private history: number[] = [];
   private bets: PublicBet[] = [];
   private activeBets = new Map<string, Partial<Record<BetSlot, PublicBet>>>();
+  private queuedBets = new Map<string, Partial<Record<BetSlot, PublicBet>>>();
   private socketUsers = new Map<string, string>();
   private settings: RuntimeSettings = defaultSettings;
   private cachedLossPoolMinor = 0;
@@ -196,15 +198,39 @@ export class GameEngine {
 
   async getWallet(userId: string): Promise<WalletSnapshot> {
     const wallet = await getWalletSnapshot(userId);
+    const queuedDocuments = await GameBetModel.find({
+      userId,
+      roundId: QUEUED_ROUND_ID,
+      status: "QUEUED"
+    }).lean();
+    const queuedBets: Partial<Record<BetSlot, PublicBet>> = {};
+    for (const document of queuedDocuments) {
+      const amountMinor = Number(document.amountMinor ?? toMinor(Number(document.amount)));
+      const reservedLiabilityMinor = Number(document.reservedLiabilityMinor ?? 0);
+      queuedBets[document.slot as BetSlot] = {
+        id: String(document.betId),
+        player: String(document.player),
+        amount: fromMinor(amountMinor),
+        slot: document.slot as BetSlot,
+        status: "QUEUED",
+        guaranteedMaxMultiplier: amountMinor > 0
+          ? Number((1 + reservedLiabilityMinor / amountMinor).toFixed(2))
+          : this.settings.maxCashoutMultiplier
+      };
+    }
+    if (Object.keys(queuedBets).length > 0) this.queuedBets.set(userId, queuedBets);
+    else this.queuedBets.delete(userId);
+
     return {
       ...wallet,
       activeBets: this.activeBets.get(userId) ?? {},
+      queuedBets,
       demoBalance: await this.demo.getBalance(userId),
       demoActiveBets: this.demo.getActiveBets(userId)
     };
   }
 
-  async placeBet(userId: string, slot: BetSlot, amountInput: number, mode: AccountMode = "REAL"): Promise<{ ok: boolean; message: string }> {
+  async placeBet(userId: string, slot: BetSlot, amountInput: number, mode: AccountMode = "REAL"): Promise<{ ok: boolean; message: string; queued?: boolean }> {
     if (mode === "DEMO") {
       const result = await this.demo.placeBet({
         userId,
@@ -219,7 +245,7 @@ export class GameEngine {
       }
       return result;
     }
-    if (this.phase !== "WAITING") return { ok: false, message: "Betting is closed for this round." };
+    const queueForNextRound = this.phase !== "WAITING";
     if (!Number.isFinite(amountInput)) return { ok: false, message: "Invalid bet amount." };
 
     const amountMinor = toMinor(amountInput);
@@ -232,6 +258,7 @@ export class GameEngine {
       return { ok: false, message: `Maximum bet is ${this.settings.maxBet.toFixed(2)} PKR.` };
     }
     if (this.activeBets.get(userId)?.[slot]) return { ok: false, message: `A ${slot} bet is already active.` };
+    if (this.queuedBets.get(userId)?.[slot]) return { ok: false, message: `A ${slot} bet is already accepted for the next round.` };
 
     const user = await UserModel.findById(userId).select("name").lean();
     if (!user) return { ok: false, message: "User account not found." };
@@ -242,42 +269,51 @@ export class GameEngine {
       player: this.maskName(String(user.name)),
       amount: fromMinor(amountMinor),
       slot,
-      status: "ACTIVE",
+      status: queueForNextRound ? "QUEUED" : "ACTIVE",
       guaranteedMaxMultiplier: this.settings.maxCashoutMultiplier
     };
 
     try {
       let stateAfter: any;
       await mongoose.connection.transaction(async (session) => {
-        const allocatableFactor = Math.max(0, 1 - this.settings.reservePercent / 100);
-        stateAfter = await PlatformStateModel.findOneAndUpdate(
-          {
-            key: "global",
-            $expr: {
-              $gte: [
-                {
-                  $subtract: [
-                    { $floor: { $multiply: [{ $ifNull: ["$lossPoolMinor", 0] }, allocatableFactor] } },
-                    { $ifNull: ["$reservedRewardLiquidityMinor", 0] }
-                  ]
-                },
-                reservedLiabilityMinor
-              ]
-            }
-          },
-          {
-            $inc: {
-              activeBetEscrowMinor: amountMinor,
-              reservedRewardLiquidityMinor: reservedLiabilityMinor,
-              totalBetVolumeMinor: amountMinor
-            }
-          },
-          { new: true, session }
-        );
-        if (!stateAfter) {
-          throw new Error(
-            `Insufficient peer liquidity to guarantee payouts up to ${this.settings.maxCashoutMultiplier.toFixed(2)}x.`
+        if (queueForNextRound) {
+          stateAfter = await PlatformStateModel.findOneAndUpdate(
+            { key: "global" },
+            { $inc: { activeBetEscrowMinor: amountMinor } },
+            { new: true, session }
           );
+          if (!stateAfter) throw new Error("Platform accounting state is unavailable.");
+        } else {
+          const allocatableFactor = Math.max(0, 1 - this.settings.reservePercent / 100);
+          stateAfter = await PlatformStateModel.findOneAndUpdate(
+            {
+              key: "global",
+              $expr: {
+                $gte: [
+                  {
+                    $subtract: [
+                      { $floor: { $multiply: [{ $ifNull: ["$lossPoolMinor", 0] }, allocatableFactor] } },
+                      { $ifNull: ["$reservedRewardLiquidityMinor", 0] }
+                    ]
+                  },
+                  reservedLiabilityMinor
+                ]
+              }
+            },
+            {
+              $inc: {
+                activeBetEscrowMinor: amountMinor,
+                reservedRewardLiquidityMinor: reservedLiabilityMinor,
+                totalBetVolumeMinor: amountMinor
+              }
+            },
+            { new: true, session }
+          );
+          if (!stateAfter) {
+            throw new Error(
+              `Insufficient peer liquidity to guarantee payouts up to ${this.settings.maxCashoutMultiplier.toFixed(2)}x.`
+            );
+          }
         }
 
         const updatedUser = await UserModel.findOneAndUpdate(
@@ -296,28 +332,30 @@ export class GameEngine {
         await GameBetModel.create(
           [{
             betId: bet.id,
-            roundId: this.roundId,
+            roundId: queueForNextRound ? QUEUED_ROUND_ID : this.roundId,
             userId,
             player: bet.player,
             slot,
             amountMinor,
             reservedLiabilityMinor,
             amount: fromMinor(amountMinor),
-            status: "ACTIVE"
+            status: queueForNextRound ? "QUEUED" : "ACTIVE"
           }],
           { session }
         );
 
-        await GameRoundModel.updateOne(
-          { roundId: this.roundId },
-          {
-            $inc: {
-              totalStakeMinor: amountMinor,
-              totalStake: fromMinor(amountMinor)
-            }
-          },
-          { session }
-        );
+        if (!queueForNextRound) {
+          await GameRoundModel.updateOne(
+            { roundId: this.roundId },
+            {
+              $inc: {
+                totalStakeMinor: amountMinor,
+                totalStake: fromMinor(amountMinor)
+              }
+            },
+            { session }
+          );
+        }
 
         await WalletTransactionModel.create(
           [walletTransaction({
@@ -328,9 +366,12 @@ export class GameEngine {
             bettingLockedDeltaMinor: amountMinor,
             user: updatedUser,
             referenceId: bet.id,
-            description: `Bet stake locked in escrow for round ${this.roundId}`,
+            description: queueForNextRound
+              ? "Bet stake locked and accepted for the next round"
+              : `Bet stake locked in escrow for round ${this.roundId}`,
             metadata: {
-              roundId: this.roundId,
+              roundId: queueForNextRound ? QUEUED_ROUND_ID : this.roundId,
+              queuedForNextRound: queueForNextRound,
               slot,
               reservedLiabilityMinor,
               guaranteedMaxMultiplier: this.settings.maxCashoutMultiplier
@@ -344,15 +385,17 @@ export class GameEngine {
             eventKey: `bet-lock:${bet.id}`,
             type: "BET_ESCROW_LOCK" as const,
             userId: new mongoose.Types.ObjectId(userId),
-            roundId: this.roundId,
+            roundId: queueForNextRound ? QUEUED_ROUND_ID : this.roundId,
             betId: bet.id,
             activeBetEscrowDeltaMinor: amountMinor,
-            reservedLiquidityDeltaMinor: reservedLiabilityMinor,
+            reservedLiquidityDeltaMinor: queueForNextRound ? 0 : reservedLiabilityMinor,
             activeBetEscrowAfterMinor: Number(stateAfter.activeBetEscrowMinor),
             reservedLiquidityAfterMinor: Number(stateAfter.reservedRewardLiquidityMinor),
             lossPoolAfterMinor: Number(stateAfter.lossPoolMinor),
             commissionWalletAfterMinor: Number(stateAfter.commissionWalletMinor),
-            description: `Locked ${fromMinor(amountMinor).toFixed(2)} PKR stake and reserved ${fromMinor(reservedLiabilityMinor).toFixed(2)} PKR winner liquidity`
+            description: queueForNextRound
+              ? `Accepted ${fromMinor(amountMinor).toFixed(2)} PKR bet for the next round; payout liquidity will be reserved when the round opens`
+              : `Locked ${fromMinor(amountMinor).toFixed(2)} PKR stake and reserved ${fromMinor(reservedLiabilityMinor).toFixed(2)} PKR winner liquidity`
           }],
           { session }
         );
@@ -363,13 +406,21 @@ export class GameEngine {
       return { ok: false, message: error instanceof Error ? error.message : "Unable to place bet." };
     }
 
-    const userBets = this.activeBets.get(userId) ?? {};
-    userBets[slot] = bet;
-    this.activeBets.set(userId, userBets);
-    this.bets.push(bet);
+    if (queueForNextRound) {
+      const userQueuedBets = this.queuedBets.get(userId) ?? {};
+      userQueuedBets[slot] = bet;
+      this.queuedBets.set(userId, userQueuedBets);
+    } else {
+      const userBets = this.activeBets.get(userId) ?? {};
+      userBets[slot] = bet;
+      this.activeBets.set(userId, userBets);
+      this.bets.push(bet);
+    }
     this.emitState();
     await this.emitWalletForUser(userId);
-    return { ok: true, message: "Bet placed with payout liquidity reserved." };
+    return queueForNextRound
+      ? { ok: true, queued: true, message: "Bet accepted for the next round. Funds are locked until it opens." }
+      : { ok: true, queued: false, message: "Bet placed with payout liquidity reserved." };
   }
 
   async cashOut(userId: string, slot: BetSlot, mode: AccountMode = "REAL"): Promise<{ ok: boolean; message: string }> {
@@ -393,7 +444,7 @@ export class GameEngine {
     if (bet.status !== "ACTIVE") return { ok: false, message: "Bet has already been settled." };
 
     const lockedMultiplier = Math.min(
-      this.settings.maxCashoutMultiplier,
+      bet.guaranteedMaxMultiplier ?? this.settings.maxCashoutMultiplier,
       Math.max(1, Number(this.multiplier.toFixed(2)))
     );
     const amountMinor = toMinor(bet.amount);
@@ -660,6 +711,217 @@ export class GameEngine {
       totalStake: 0,
       totalPayout: 0
     });
+
+    await this.activateQueuedBetsForCurrentRound();
+  }
+
+  private async activateQueuedBetsForCurrentRound(): Promise<void> {
+    const queuedDocuments = await GameBetModel.find({
+      roundId: QUEUED_ROUND_ID,
+      status: "QUEUED"
+    }).sort({ createdAt: 1 }).lean();
+
+    if (queuedDocuments.length === 0) return;
+
+    const affectedUsers = new Set<string>();
+    for (const queuedDocument of queuedDocuments) {
+      const userId = String(queuedDocument.userId);
+      const slot = queuedDocument.slot as BetSlot;
+      const amountMinor = Number(queuedDocument.amountMinor ?? toMinor(Number(queuedDocument.amount)));
+      const reservedLiabilityMinor = Number(queuedDocument.reservedLiabilityMinor ?? 0);
+      let activeDocument: any;
+
+      try {
+        await mongoose.connection.transaction(async (session) => {
+          const allocatableFactor = Math.max(0, 1 - this.settings.reservePercent / 100);
+          const stateAfter = await PlatformStateModel.findOneAndUpdate(
+            {
+              key: "global",
+              $expr: {
+                $gte: [
+                  {
+                    $subtract: [
+                      { $floor: { $multiply: [{ $ifNull: ["$lossPoolMinor", 0] }, allocatableFactor] } },
+                      { $ifNull: ["$reservedRewardLiquidityMinor", 0] }
+                    ]
+                  },
+                  reservedLiabilityMinor
+                ]
+              }
+            },
+            {
+              $inc: {
+                reservedRewardLiquidityMinor: reservedLiabilityMinor,
+                totalBetVolumeMinor: amountMinor
+              }
+            },
+            { new: true, session }
+          );
+          if (!stateAfter) {
+            throw new Error(
+              `Insufficient peer liquidity to process the queued bet up to ${(
+                1 + reservedLiabilityMinor / Math.max(1, amountMinor)
+              ).toFixed(2)}x.`
+            );
+          }
+
+          activeDocument = await GameBetModel.findOneAndUpdate(
+            { _id: queuedDocument._id, roundId: QUEUED_ROUND_ID, status: "QUEUED" },
+            { $set: { roundId: this.roundId, status: "ACTIVE" } },
+            { new: true, session }
+          );
+          if (!activeDocument) throw new Error("Queued bet has already been processed.");
+
+          await GameRoundModel.updateOne(
+            { roundId: this.roundId },
+            {
+              $inc: {
+                totalStakeMinor: amountMinor,
+                totalStake: fromMinor(amountMinor)
+              }
+            },
+            { session }
+          );
+
+          await PlatformAuditModel.create(
+            [{
+              eventKey: `queued-bet-activated:${String(queuedDocument.betId)}`,
+              type: "BET_ESCROW_LOCK" as const,
+              userId: queuedDocument.userId,
+              roundId: this.roundId,
+              betId: String(queuedDocument.betId),
+              reservedLiquidityDeltaMinor: reservedLiabilityMinor,
+              activeBetEscrowAfterMinor: Number(stateAfter.activeBetEscrowMinor),
+              reservedLiquidityAfterMinor: Number(stateAfter.reservedRewardLiquidityMinor),
+              lossPoolAfterMinor: Number(stateAfter.lossPoolMinor),
+              commissionWalletAfterMinor: Number(stateAfter.commissionWalletMinor),
+              description: `Activated queued bet and reserved ${fromMinor(reservedLiabilityMinor).toFixed(2)} PKR payout liquidity`
+            }],
+            { session }
+          );
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to process queued bet.";
+        await this.refundQueuedBet(queuedDocument, message);
+        this.emitToUser(userId, "bet:queue-result", { ok: false, slot, message });
+        affectedUsers.add(userId);
+        continue;
+      }
+
+      const activeBet: PublicBet = {
+        id: String(activeDocument.betId),
+        player: String(activeDocument.player),
+        amount: fromMinor(amountMinor),
+        slot,
+        status: "ACTIVE",
+        guaranteedMaxMultiplier: Number((
+          1 + reservedLiabilityMinor / Math.max(1, amountMinor)
+        ).toFixed(2))
+      };
+
+      const userActiveBets = this.activeBets.get(userId) ?? {};
+      userActiveBets[slot] = activeBet;
+      this.activeBets.set(userId, userActiveBets);
+      this.bets.push(activeBet);
+
+      const userQueuedBets = this.queuedBets.get(userId);
+      if (userQueuedBets) {
+        delete userQueuedBets[slot];
+        if (Object.keys(userQueuedBets).length === 0) this.queuedBets.delete(userId);
+        else this.queuedBets.set(userId, userQueuedBets);
+      }
+      this.emitToUser(userId, "bet:queue-result", {
+        ok: true,
+        slot,
+        message: "Queued bet is now active in the new round."
+      });
+      affectedUsers.add(userId);
+    }
+
+    await this.refreshAccountingCache();
+    for (const userId of affectedUsers) await this.emitWalletForUser(userId);
+  }
+
+  private async refundQueuedBet(queuedDocument: any, reason: string): Promise<void> {
+    const amountMinor = Number(queuedDocument.amountMinor ?? toMinor(Number(queuedDocument.amount)));
+    let stateAfter: any;
+
+    await mongoose.connection.transaction(async (session) => {
+      const refundedBet = await GameBetModel.findOneAndUpdate(
+        { _id: queuedDocument._id, roundId: QUEUED_ROUND_ID, status: "QUEUED" },
+        { $set: { status: "REFUNDED", settledAt: new Date() } },
+        { new: true, session }
+      );
+      if (!refundedBet) return;
+
+      const updatedUser = await UserModel.findOneAndUpdate(
+        { _id: queuedDocument.userId, bettingLockedMinor: { $gte: amountMinor } },
+        {
+          $inc: {
+            balanceMinor: amountMinor,
+            bettingLockedMinor: -amountMinor,
+            balance: fromMinor(amountMinor)
+          }
+        },
+        { new: true, session }
+      );
+      if (!updatedUser) throw new Error("Queued bet refund failed because the wallet escrow is inconsistent.");
+
+      stateAfter = await PlatformStateModel.findOneAndUpdate(
+        { key: "global", activeBetEscrowMinor: { $gte: amountMinor } },
+        { $inc: { activeBetEscrowMinor: -amountMinor } },
+        { new: true, session }
+      );
+      if (!stateAfter) throw new Error("Queued bet refund failed because platform escrow is inconsistent.");
+
+      await WalletTransactionModel.create(
+        [walletTransaction({
+          userId: queuedDocument.userId,
+          type: "BET_REFUND",
+          amountMinor,
+          availableDeltaMinor: amountMinor,
+          bettingLockedDeltaMinor: -amountMinor,
+          user: updatedUser,
+          referenceId: String(queuedDocument.betId),
+          description: `Queued bet refunded: ${reason}`,
+          metadata: { queuedForNextRound: true, reason }
+        })],
+        { session }
+      );
+
+      await PlatformAuditModel.create(
+        [{
+          eventKey: `queued-bet-refund:${String(queuedDocument.betId)}`,
+          type: "BET_REFUNDED" as const,
+          userId: queuedDocument.userId,
+          roundId: QUEUED_ROUND_ID,
+          betId: String(queuedDocument.betId),
+          activeBetEscrowDeltaMinor: -amountMinor,
+          activeBetEscrowAfterMinor: Number(stateAfter.activeBetEscrowMinor),
+          reservedLiquidityAfterMinor: Number(stateAfter.reservedRewardLiquidityMinor),
+          lossPoolAfterMinor: Number(stateAfter.lossPoolMinor),
+          commissionWalletAfterMinor: Number(stateAfter.commissionWalletMinor),
+          description: `Refunded queued bet of ${fromMinor(amountMinor).toFixed(2)} PKR because it could not be activated`
+        }],
+        { session }
+      );
+    });
+
+    const userId = String(queuedDocument.userId);
+    const slot = queuedDocument.slot as BetSlot;
+    const userQueuedBets = this.queuedBets.get(userId);
+    if (userQueuedBets) {
+      delete userQueuedBets[slot];
+      if (Object.keys(userQueuedBets).length === 0) this.queuedBets.delete(userId);
+      else this.queuedBets.set(userId, userQueuedBets);
+    }
+    if (stateAfter) this.updateAccountingCache(stateAfter);
+  }
+
+  private emitToUser(userId: string, event: string, payload: unknown): void {
+    for (const [socketId, connectedUserId] of this.socketUsers.entries()) {
+      if (connectedUserId === userId) this.io.to(socketId).emit(event, payload);
+    }
   }
 
   private async settleLosses(): Promise<void> {
