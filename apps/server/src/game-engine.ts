@@ -66,7 +66,7 @@ export class GameEngine {
       commit: this.commit,
       history: this.history,
       bets: [...this.bets].sort((a, b) => b.amount - a.amount).slice(0, 120),
-      online: this.io.engine.clientsCount + 120
+      online: this.io.sockets.sockets.size
     };
   }
 
