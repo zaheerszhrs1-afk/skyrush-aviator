@@ -37,6 +37,16 @@ const asyncRoute = (handler: (request: any, response: Response, next: NextFuncti
 const numberInput = (value: unknown): number => Number(value);
 const cleanText = (value: unknown, max = 500): string => String(value ?? "").trim().slice(0, max);
 
+const depositStatuses = ["PENDING", "APPROVED", "REJECTED"] as const;
+type DepositStatus = (typeof depositStatuses)[number];
+const isDepositStatus = (value: string): value is DepositStatus =>
+  depositStatuses.includes(value as DepositStatus);
+
+const withdrawalStatuses = ["PENDING", "PROCESSING", "COMPLETED", "REJECTED"] as const;
+type WithdrawalStatus = (typeof withdrawalStatuses)[number];
+const isWithdrawalStatus = (value: string): value is WithdrawalStatus =>
+  withdrawalStatuses.includes(value as WithdrawalStatus);
+
 await connectDatabase();
 await bootstrapAdmin();
 
@@ -214,7 +224,7 @@ app.get("/api/admin/users", requireAdmin, asyncRoute(async (request, response) =
 app.patch("/api/admin/users/:id", requireAdmin, asyncRoute(async (request, response) => {
   const status = request.body?.status === "SUSPENDED" ? "SUSPENDED" : "ACTIVE";
   const user = await UserModel.findOneAndUpdate(
-    { _id: request.params.id, role: "USER" },
+    { _id: cleanText(request.params.id, 100), role: "USER" },
     { $set: { status } },
     { new: true }
   );
@@ -227,8 +237,8 @@ app.patch("/api/admin/users/:id", requireAdmin, asyncRoute(async (request, respo
 }));
 
 app.get("/api/admin/deposits", requireAdmin, asyncRoute(async (request, response) => {
-  const status = cleanText(request.query.status, 30);
-  const filter = status ? { status } : {};
+  const rawStatus = cleanText(request.query.status, 30).toUpperCase();
+  const filter: { status?: DepositStatus } = isDepositStatus(rawStatus) ? { status: rawStatus } : {};
   const deposits = await DepositRequestModel.find(filter)
     .populate("userId", "name email")
     .sort({ createdAt: -1 })
@@ -240,7 +250,7 @@ app.get("/api/admin/deposits", requireAdmin, asyncRoute(async (request, response
 app.patch("/api/admin/deposits/:id", requireAdmin, asyncRoute(async (request: AuthenticatedRequest, response) => {
   const action = request.body?.action === "REJECT" ? "REJECT" : "APPROVE";
   const result = await reviewDeposit({
-    depositId: request.params.id,
+    depositId: cleanText(request.params.id, 100),
     adminId: request.authUser!.id,
     action,
     note: cleanText(request.body?.note, 500)
@@ -250,8 +260,8 @@ app.patch("/api/admin/deposits/:id", requireAdmin, asyncRoute(async (request: Au
 }));
 
 app.get("/api/admin/withdrawals", requireAdmin, asyncRoute(async (request, response) => {
-  const status = cleanText(request.query.status, 30);
-  const filter = status ? { status } : {};
+  const rawStatus = cleanText(request.query.status, 30).toUpperCase();
+  const filter: { status?: WithdrawalStatus } = isWithdrawalStatus(rawStatus) ? { status: rawStatus } : {};
   const withdrawals = await WithdrawalRequestModel.find(filter)
     .populate("userId", "name email")
     .sort({ createdAt: -1 })
@@ -264,7 +274,7 @@ app.patch("/api/admin/withdrawals/:id", requireAdmin, asyncRoute(async (request:
   const rawAction = cleanText(request.body?.action, 20);
   const action = rawAction === "REJECT" ? "REJECT" : rawAction === "PROCESS" ? "PROCESS" : "COMPLETE";
   const result = await reviewWithdrawal({
-    withdrawalId: request.params.id,
+    withdrawalId: cleanText(request.params.id, 100),
     adminId: request.authUser!.id,
     action,
     note: cleanText(request.body?.note, 500)
