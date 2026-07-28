@@ -21,6 +21,7 @@ const money = (value: number): number => Number(value.toFixed(2));
 
 interface RuntimeSettings {
   houseEdgePercent: number;
+  commissionPercent: number;
   reservePercent: number;
   minBet: number;
   maxBet: number;
@@ -29,6 +30,7 @@ interface RuntimeSettings {
 
 const defaultSettings: RuntimeSettings = {
   houseEdgePercent: 1,
+  commissionPercent: 10,
   reservePercent: 30,
   minBet: 16,
   maxBet: 100_000,
@@ -50,6 +52,7 @@ export class GameEngine {
   private activeBets = new Map<string, Partial<Record<BetSlot, PublicBet>>>();
   private socketUsers = new Map<string, string>();
   private settings: RuntimeSettings = defaultSettings;
+  private cachedLossPool = 0;
   private timer?: NodeJS.Timeout;
   private ticking = false;
 
@@ -65,6 +68,8 @@ export class GameEngine {
       .select("crashPoint")
       .lean();
     this.history = recentRounds.map((round) => Number(round.crashPoint));
+    const state = await PlatformStateModel.findOne({ key: "global" }).lean();
+    this.cachedLossPool = money(Math.max(0, Number((state as any)?.lossPool ?? 0)));
     await this.prepareRound();
     this.timer = setInterval(() => void this.tick(), TICK_MS);
   }
@@ -94,7 +99,9 @@ export class GameEngine {
       history: this.history,
       bets: [...this.bets].sort((a, b) => b.amount - a.amount).slice(0, 120),
       online: this.socketUsers.size,
-      houseEdgePercent: this.settings.houseEdgePercent
+      houseEdgePercent: this.settings.houseEdgePercent,
+      lossPool: this.cachedLossPool,
+      commissionPercent: this.settings.commissionPercent
     };
   }
 
@@ -197,7 +204,17 @@ export class GameEngine {
       this.settings.maxCashoutMultiplier,
       Math.max(1, Number(this.multiplier.toFixed(2)))
     );
-    const payout = money(bet.amount * lockedMultiplier);
+    const grossPayout = money(bet.amount * lockedMultiplier);
+    const profit = money(grossPayout - bet.amount);
+    const commission = money(profit * (this.settings.commissionPercent / 100));
+    const payout = money(grossPayout - commission);
+
+    // Liquidity check: Loss Pool must cover the profit portion paid to winner
+    const state = await PlatformStateModel.findOne({ key: "global" }).lean();
+    const lossPool = money(Math.max(0, Number(state?.lossPool ?? 0)));
+    if (profit > 0 && lossPool < profit) {
+      return { ok: false, message: "Insufficient pool liquidity to pay this win. Try cashing out earlier." };
+    }
 
     try {
       await mongoose.connection.transaction(async (session) => {
@@ -215,9 +232,10 @@ export class GameEngine {
         );
         if (!updatedUser) throw new Error("User account not found.");
 
+        // Deduct profit from Loss Pool; stake was already removed on bet placement
         await PlatformStateModel.updateOne(
           { key: "global" },
-          { $inc: { gameProfit: -payout } },
+          { $inc: { lossPool: -profit, totalCommissionEarned: commission, gameProfit: -payout } },
           { session, upsert: true }
         );
         await GameRoundModel.updateOne({ roundId: this.roundId }, { $inc: { totalPayout: payout } }, { session });
@@ -230,8 +248,8 @@ export class GameEngine {
             lockedBalanceAfter: money(updatedUser.lockedBalance),
             referenceType: "BET",
             referenceId: bet.id,
-            description: `Cashed out at ${lockedMultiplier.toFixed(2)}x`,
-            metadata: { roundId: this.roundId, slot, multiplier: lockedMultiplier }
+            description: `Cashed out at ${lockedMultiplier.toFixed(2)}x (commission ${commission.toFixed(2)} PKR)`,
+            metadata: { roundId: this.roundId, slot, multiplier: lockedMultiplier, commission }
           }],
           { session }
         );
@@ -243,6 +261,7 @@ export class GameEngine {
     bet.status = "CASHED_OUT";
     bet.cashoutMultiplier = lockedMultiplier;
     bet.payout = payout;
+    this.cachedLossPool = money(Math.max(0, this.cachedLossPool - profit));
     const userBets = this.activeBets.get(userId);
     if (userBets) {
       delete userBets[slot];
@@ -343,13 +362,24 @@ export class GameEngine {
   }
 
   private async settleLosses(): Promise<void> {
+    const losingBets = this.bets.filter((b) => b.status === "ACTIVE");
+    const totalLost = money(losingBets.reduce((sum, b) => sum + b.amount, 0));
+
     await GameBetModel.updateMany(
       { roundId: this.roundId, status: "ACTIVE" },
       { $set: { status: "LOST", settledAt: new Date() } }
     );
-    for (const bet of this.bets) {
-      if (bet.status === "ACTIVE") bet.status = "LOST";
+    for (const bet of losingBets) bet.status = "LOST";
+
+    if (totalLost > 0) {
+      await PlatformStateModel.updateOne(
+        { key: "global" },
+        { $inc: { lossPool: totalLost } },
+        { upsert: true }
+      );
+      this.cachedLossPool = money(this.cachedLossPool + totalLost);
     }
+
     const affectedUsers = [...this.activeBets.keys()];
     this.activeBets.clear();
     for (const userId of affectedUsers) await this.emitWalletForUser(userId);
@@ -394,28 +424,19 @@ export class GameEngine {
   }
 
   private async checkRiskCapacity(amount: number): Promise<{ ok: boolean; message: string }> {
-    const state = await PlatformStateModel.findOne({ key: "global" }).lean();
-    const bankroll = Math.max(0, Number(state?.houseBankroll ?? 0) + Number(state?.gameProfit ?? 0));
-    const reserve = bankroll * (this.settings.reservePercent / 100);
-    const availableRisk = Math.max(0, bankroll - reserve);
-    const currentExposure = this.bets
-      .filter((bet) => bet.status === "ACTIVE")
-      .reduce((sum, bet) => sum + bet.amount * (this.settings.maxCashoutMultiplier - 1), 0);
-    const newExposure = amount * (this.settings.maxCashoutMultiplier - 1);
-
-    if (bankroll <= 0) {
-      return { ok: false, message: "Game bankroll is not funded. Contact support." };
+    // P2P model: bets are always accepted during WAITING phase.
+    // Winning payouts are gated at cash-out time by Loss Pool liquidity.
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { ok: false, message: "Invalid bet amount." };
     }
-    if (currentExposure + newExposure > availableRisk) {
-      return { ok: false, message: "Bet exceeds the platform's current payout reserve." };
-    }
-    return { ok: true, message: "Risk capacity available." };
+    return { ok: true, message: "Bet accepted." };
   }
 
   private async loadSettings(): Promise<RuntimeSettings> {
     const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
     return {
       houseEdgePercent: Number(settings?.houseEdgePercent ?? defaultSettings.houseEdgePercent),
+      commissionPercent: Number((settings as any)?.commissionPercent ?? defaultSettings.commissionPercent),
       reservePercent: Number(settings?.reservePercent ?? defaultSettings.reservePercent),
       minBet: Number(settings?.minBet ?? defaultSettings.minBet),
       maxBet: Number(settings?.maxBet ?? defaultSettings.maxBet),

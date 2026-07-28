@@ -23,6 +23,8 @@ export interface RoundSnapshot {
   bets: PublicBet[];
   online: number;
   houseEdgePercent: number;
+  lossPool: number;
+  commissionPercent: number;
 }
 
 export interface WalletSnapshot {

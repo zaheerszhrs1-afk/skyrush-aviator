@@ -10,7 +10,9 @@ export type TransactionType =
   | "BET_DEBIT"
   | "CASHOUT_CREDIT"
   | "BET_REFUND"
-  | "ADMIN_ADJUSTMENT";
+  | "ADMIN_ADJUSTMENT"
+  | "LOSS_POOL_CREDIT"
+  | "COMMISSION_DEBIT";
 
 const userSchema = new Schema(
   {
@@ -50,7 +52,9 @@ const walletTransactionSchema = new Schema(
         "BET_DEBIT",
         "CASHOUT_CREDIT",
         "BET_REFUND",
-        "ADMIN_ADJUSTMENT"
+        "ADMIN_ADJUSTMENT",
+        "LOSS_POOL_CREDIT",
+        "COMMISSION_DEBIT"
       ],
       required: true,
       index: true
@@ -107,6 +111,7 @@ const platformSettingsSchema = new Schema(
   {
     key: { type: String, default: "global", unique: true },
     houseEdgePercent: { type: Number, default: 1, min: 0, max: 20 },
+    commissionPercent: { type: Number, default: 10, min: 0, max: 50 },
     reservePercent: { type: Number, default: 30, min: 0, max: 95 },
     minBet: { type: Number, default: 16, min: 1 },
     maxBet: { type: Number, default: 100_000, min: 1 },
@@ -123,6 +128,8 @@ const platformStateSchema = new Schema(
     key: { type: String, default: "global", unique: true },
     houseBankroll: { type: Number, default: 0 },
     gameProfit: { type: Number, default: 0 },
+    lossPool: { type: Number, default: 0 },
+    totalCommissionEarned: { type: Number, default: 0 },
     totalApprovedDeposits: { type: Number, default: 0 },
     totalCompletedWithdrawals: { type: Number, default: 0 }
   },

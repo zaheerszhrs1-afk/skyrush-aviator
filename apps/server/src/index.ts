@@ -205,6 +205,8 @@ app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response
       gameProfit: Number(state?.gameProfit ?? 0),
       effectiveBankroll: bankroll,
       requiredReserve: Math.max(0, bankroll * reservePercent / 100),
+      lossPool: Number((state as any)?.lossPool ?? 0),
+      totalCommissionEarned: Number((state as any)?.totalCommissionEarned ?? 0),
       totalApprovedDeposits: Number(state?.totalApprovedDeposits ?? 0),
       totalCompletedWithdrawals: Number(state?.totalCompletedWithdrawals ?? 0),
       recentRounds
@@ -293,12 +295,13 @@ app.get("/api/admin/settings", requireAdmin, asyncRoute(async (_request, respons
 
 app.patch("/api/admin/settings", requireAdmin, asyncRoute(async (request: AuthenticatedRequest, response) => {
   const houseEdgePercent = Math.min(20, Math.max(0, numberInput(request.body?.houseEdgePercent)));
+  const commissionPercent = Math.min(50, Math.max(0, numberInput(request.body?.commissionPercent)));
   const reservePercent = Math.min(95, Math.max(0, numberInput(request.body?.reservePercent)));
   const minBet = Math.max(1, numberInput(request.body?.minBet));
   const maxBet = Math.max(minBet, numberInput(request.body?.maxBet));
   const maxCashoutMultiplier = Math.min(1000, Math.max(1.01, numberInput(request.body?.maxCashoutMultiplier)));
   const houseBankroll = Math.max(0, numberInput(request.body?.houseBankroll));
-  if (![houseEdgePercent, reservePercent, minBet, maxBet, maxCashoutMultiplier, houseBankroll].every(Number.isFinite)) {
+  if (![houseEdgePercent, commissionPercent, reservePercent, minBet, maxBet, maxCashoutMultiplier, houseBankroll].every(Number.isFinite)) {
     response.status(400).json({ ok: false, message: "All numeric settings must be valid numbers." });
     return;
   }
@@ -309,6 +312,7 @@ app.patch("/api/admin/settings", requireAdmin, asyncRoute(async (request: Authen
       {
         $set: {
           houseEdgePercent,
+          commissionPercent,
           reservePercent,
           minBet,
           maxBet,
