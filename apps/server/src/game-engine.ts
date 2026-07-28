@@ -682,10 +682,19 @@ export class GameEngine {
     this.roundId = crypto.randomUUID();
     this.serverSeed = crypto.randomBytes(32).toString("hex");
     this.commit = this.hash(this.serverSeed);
-    this.crashPoint = Math.min(
+    const naturalCrash = Math.min(
       this.settings.maxCashoutMultiplier,
       this.calculateCrashPoint(this.serverSeed, this.roundId, this.settings.houseEdgePercent)
     );
+    const allocatableFactor = Math.max(0, 1 - this.settings.reservePercent / 100);
+    const availablePoolMinor = Math.max(
+      0,
+      Math.floor(this.cachedLossPoolMinor * allocatableFactor) - this.cachedReservedLiquidityMinor
+    );
+    const pendingLiabilityMinor = [...this.queuedBets.values()]
+      .flatMap((slots) => Object.values(slots))
+      .reduce((sum, bet) => sum + calculateMaximumLiability(toMinor(bet.amount), this.settings.maxCashoutMultiplier), 0);
+    this.crashPoint = availablePoolMinor < pendingLiabilityMinor ? 1.00 : naturalCrash;
     this.multiplier = 1;
     this.startedAt = null;
     this.phaseEndsAt = Date.now() + WAITING_MS;
