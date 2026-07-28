@@ -414,75 +414,320 @@ export class AviatorPixiScene {
   }
 
   private createPlane(): any {
-    const { Container, Graphics, Text } = this.PIXI;
+    const { Container, Graphics } = this.PIXI;
     const plane = new Container();
 
-    const shadow = new Graphics();
-    shadow.ellipse(70, 58, 56, 7).fill({ color: 0x000000, alpha: 0.28 });
+    const red = 0xf40045;
+    const deepRed = 0xcc0038;
+    const white = 0xffffff;
+    const dark = 0x13070b;
 
-    const rearWing = new Graphics();
-    rearWing.poly([34, 31, 100, 18, 127, 23, 73, 42], true).fill(0xc90036);
+    const body = new Graphics();
+    body
+      .poly([
+        12, 98,
+        32, 87,
+        50, 89,
+        69, 80,
+        88, 66,
+        120, 53,
+        156, 42,
+        201, 33,
+        237, 27,
+        267, 20,
+        302, 16,
+        335, 12,
+        361, 10,
+        389, 12,
+        405, 22,
+        414, 39,
+        412, 57,
+        396, 69,
+        372, 83,
+        344, 96,
+        311, 110,
+        272, 124,
+        231, 136,
+        182, 150,
+        134, 164,
+        97, 173,
+        72, 177,
+        59, 170,
+        44, 151,
+        31, 131,
+        18, 111
+      ], true)
+      .fill(red);
 
-    const lowerWing = new Graphics();
-    lowerWing.poly([42, 45, 116, 36, 132, 43, 67, 55], true).fill(0xe1003b);
+    const rearTailTop = new Graphics();
+    rearTailTop.poly([
+      26, 131,
+      1, 110,
+      10, 105,
+      36, 120,
+      55, 143,
+      50, 148
+    ], true).fill(red);
 
-    const fuselage = new Graphics();
-    fuselage
-      .moveTo(20, 39)
-      .bezierCurveTo(45, 34, 85, 31, 132, 33)
-      .bezierCurveTo(146, 34, 154, 38, 157, 42)
-      .bezierCurveTo(150, 47, 132, 49, 101, 48)
-      .lineTo(56, 50)
-      .lineTo(29, 47)
+    const rearTailBottom = new Graphics();
+    rearTailBottom.poly([
+      41, 149,
+      2, 162,
+      11, 168,
+      60, 159,
+      81, 174,
+      76, 181,
+      58, 177
+    ], true).fill(deepRed);
+
+    const tailFork = new Graphics();
+    tailFork
+      .moveTo(61, 174)
+      .lineTo(70, 184)
+      .lineTo(65, 188)
+      .lineTo(55, 177)
       .closePath()
-      .fill(0xff0045);
+      .fill(red);
 
-    const tail = new Graphics();
-    tail.poly([24, 39, 4, 24, 15, 23, 38, 39], true).fill(0xff0045);
-    tail.poly([21, 39, 12, 12, 24, 14, 38, 39], true).fill(0xe6003f);
-    tail.poly([14, 42, 0, 47, 5, 52, 39, 48], true).fill(0xc90036);
+    const skid = new Graphics();
+    skid
+      .moveTo(72, 182)
+      .bezierCurveTo(132, 173, 196, 158, 264, 134)
+      .bezierCurveTo(313, 116, 351, 97, 383, 77)
+      .lineTo(391, 82)
+      .bezierCurveTo(357, 106, 315, 127, 266, 146)
+      .bezierCurveTo(203, 170, 145, 186, 82, 195)
+      .lineTo(72, 182)
+      .closePath()
+      .fill(red);
 
-    const upperWing = new Graphics();
-    upperWing.poly([48, 30, 91, 12, 122, 16, 91, 34], true).fill(0xff0045);
+    const wingTop = new Graphics();
+    wingTop.poly([
+      104, 79,
+      228, 59,
+      295, 67,
+      298, 74,
+      281, 80,
+      232, 82,
+      149, 92,
+      123, 99
+    ], true).fill(red);
 
-    const cockpit = new Graphics();
-    cockpit.roundRect(103, 30, 26, 13, 5).fill(0x15171a);
-    cockpit.roundRect(107, 32, 14, 5, 2).fill({ color: 0x617282, alpha: 0.65 });
+    const wingBottom = new Graphics();
+    wingBottom.poly([
+      96, 103,
+      225, 81,
+      292, 91,
+      298, 98,
+      275, 107,
+      221, 110,
+      144, 122,
+      108, 133,
+      97, 121
+    ], true).fill(red);
 
-    const engine = new Graphics();
-    engine.roundRect(146, 35, 14, 14, 5).fill(0xdf003b);
-    engine.circle(158, 42, 4).fill(0xff6a86);
+    const cabinFrame = new Graphics();
+    cabinFrame.poly([
+      196, 43,
+      276, 9,
+      363, 12,
+      375, 65,
+      324, 78,
+      252, 71,
+      195, 67,
+      189, 55
+    ], true).fill(red);
+
+    const roof = new Graphics();
+    roof.poly([
+      221, 28,
+      239, 17,
+      274, 17,
+      260, 34,
+      231, 40,
+      216, 37
+    ], true).fill(red);
+
+    const fin = new Graphics();
+    fin.poly([
+      401, 50,
+      423, 47,
+      434, 48,
+      421, 65,
+      408, 70,
+      396, 60
+    ], true).fill(red);
 
     this.propeller = new Graphics();
-    this.propeller.roundRect(158, 16, 4, 52, 2).fill({ color: 0xff0045, alpha: 0.95 });
-    this.propeller.circle(160, 42, 4).fill(0xff0045);
-    this.propeller.pivot.set(160, 42);
-    this.propeller.position.set(160, 42);
+    this.propeller.ellipse(0, -42, 11, 44).fill(red);
+    this.propeller.ellipse(0, 42, 11, 44).fill(red);
+    this.propeller.circle(0, 0, 6).fill(deepRed);
+    this.propeller.position.set(433, 32);
 
-    const struts = new Graphics();
-    struts
-      .moveTo(61, 28)
-      .lineTo(69, 47)
-      .moveTo(92, 23)
-      .lineTo(97, 45)
-      .stroke({ color: 0x8e0027, width: 3, cap: "round" });
+    const canopyCut = new Graphics();
+    canopyCut.poly([
+      215, 52,
+      283, 21,
+      340, 19,
+      351, 59,
+      320, 67,
+      259, 62
+    ], true).fill(white);
 
-    const markBox = new Graphics();
-    markBox.roundRect(126, 35, 17, 13, 2).fill(0x111315);
-    const mark = new Text({
-      text: "X",
-      style: {
-        fontFamily: "Arial, Helvetica, sans-serif",
-        fontSize: 11,
-        fontWeight: "900",
-        fill: 0xff0045
-      }
-    });
-    mark.anchor.set(0.5);
-    mark.position.set(134.5, 41.5);
+    const centerRedWindow = new Graphics();
+    centerRedWindow.poly([
+      270, 47,
+      304, 29,
+      323, 31,
+      333, 50,
+      309, 62,
+      281, 58
+    ], true).fill(red);
 
-    plane.addChild(shadow, tail, rearWing, lowerWing, fuselage, upperWing, struts, cockpit, engine, markBox, mark, this.propeller);
-    plane.pivot.set(80, 42);
+    const cabinBackCut = new Graphics();
+    cabinBackCut.poly([
+      196, 51,
+      219, 38,
+      246, 42,
+      224, 58
+    ], true).fill(white);
+
+    const roofCut = new Graphics();
+    roofCut.poly([
+      229, 31,
+      244, 23,
+      263, 24,
+      251, 35,
+      234, 38
+    ], true).fill(white);
+
+    const noseCut = new Graphics();
+    noseCut.poly([
+      111, 87,
+      219, 73,
+      274, 80,
+      281, 85,
+      259, 92,
+      204, 95,
+      137, 103,
+      119, 107,
+      108, 97
+    ], true).fill(white);
+
+    const bodyCut = new Graphics();
+    bodyCut.poly([
+      97, 118,
+      220, 95,
+      272, 101,
+      226, 121,
+      179, 133,
+      141, 144,
+      124, 150,
+      111, 141,
+      95, 129
+    ], true).fill(white);
+
+    const lowerLongCut = new Graphics();
+    lowerLongCut
+      .moveTo(87, 178)
+      .bezierCurveTo(144, 168, 197, 154, 252, 135)
+      .bezierCurveTo(303, 117, 340, 99, 372, 81)
+      .lineTo(379, 86)
+      .bezierCurveTo(348, 107, 305, 128, 254, 147)
+      .bezierCurveTo(205, 165, 149, 180, 97, 188)
+      .lineTo(87, 178)
+      .closePath()
+      .fill(white);
+
+    const tailTopCut = new Graphics();
+    tailTopCut.poly([
+      22, 122,
+      9, 111,
+      17, 108,
+      32, 118,
+      44, 130,
+      39, 134
+    ], true).fill(white);
+
+    const tailBottomCut = new Graphics();
+    tailBottomCut.poly([
+      45, 158,
+      12, 168,
+      20, 172,
+      49, 164,
+      63, 174,
+      58, 177
+    ], true).fill(white);
+
+    const xMark = new Graphics();
+    xMark
+      .moveTo(310, 34)
+      .lineTo(319, 34)
+      .lineTo(327, 49)
+      .lineTo(339, 27)
+      .lineTo(348, 28)
+      .lineTo(333, 54)
+      .lineTo(347, 76)
+      .lineTo(338, 76)
+      .lineTo(327, 59)
+      .lineTo(317, 77)
+      .lineTo(308, 76)
+      .lineTo(322, 54)
+      .closePath()
+      .fill(red);
+
+    const outline = new Graphics();
+    outline
+      .moveTo(13, 98)
+      .lineTo(35, 86)
+      .lineTo(70, 80)
+      .lineTo(121, 53)
+      .lineTo(201, 33)
+      .lineTo(302, 16)
+      .lineTo(362, 10)
+      .lineTo(389, 12)
+      .lineTo(405, 22)
+      .lineTo(414, 39)
+      .lineTo(433, 32)
+      .lineTo(407, 70)
+      .lineTo(396, 69)
+      .lineTo(344, 96)
+      .lineTo(272, 124)
+      .lineTo(134, 164)
+      .lineTo(97, 173)
+      .lineTo(73, 182)
+      .lineTo(58, 177)
+      .lineTo(43, 149)
+      .lineTo(18, 111)
+      .closePath()
+      .stroke({ color: dark, width: 2, alpha: 0.22, join: "round" });
+
+    plane.addChild(
+      body,
+      rearTailTop,
+      rearTailBottom,
+      tailFork,
+      skid,
+      wingTop,
+      wingBottom,
+      cabinFrame,
+      roof,
+      fin,
+      canopyCut,
+      centerRedWindow,
+      cabinBackCut,
+      roofCut,
+      noseCut,
+      bodyCut,
+      lowerLongCut,
+      tailTopCut,
+      tailBottomCut,
+      xMark,
+      outline,
+      this.propeller
+    );
+
+    plane.pivot.set(224, 99);
     return plane;
   }
 
