@@ -126,6 +126,24 @@ async function migrateMinorUnitFields(): Promise<void> {
 }
 
 
+async function releaseStaleQueuedBetKeys(): Promise<void> {
+  const staleQueuedDocuments = await GameBetModel.find({
+    roundId: "__NEXT_ROUND__",
+    status: { $in: ["REFUNDED", "LOST", "CASHED_OUT"] }
+  }).select("betId").lean();
+
+  if (staleQueuedDocuments.length === 0) return;
+
+  await GameBetModel.bulkWrite(
+    staleQueuedDocuments.map((bet: any) => ({
+      updateOne: {
+        filter: { _id: bet._id, roundId: "__NEXT_ROUND__" },
+        update: { $set: { roundId: `__ARCHIVED_NEXT_ROUND__:${String(bet.betId ?? bet._id)}` } }
+      }
+    }))
+  );
+}
+
 async function migrateSettingsVersion(): Promise<void> {
   const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
   if (!settings) return;
@@ -183,6 +201,7 @@ export async function connectDatabase(): Promise<void> {
 
   await migrateSettingsVersion();
   await migrateMinorUnitFields();
+  await releaseStaleQueuedBetKeys();
   console.log(`MongoDB connected: ${mongoose.connection.name}`);
 }
 

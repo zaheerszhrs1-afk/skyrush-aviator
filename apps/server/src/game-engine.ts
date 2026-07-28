@@ -24,6 +24,11 @@ const TICK_MS = 100;
 const MAX_CRASH = 1000;
 const QUEUED_ROUND_ID = "__NEXT_ROUND__";
 
+const isDuplicateKeyError = (error: unknown): boolean => {
+  const candidate = error as { code?: number; message?: string };
+  return candidate?.code === 11000 || /E11000 duplicate key/i.test(candidate?.message ?? "");
+};
+
 interface RuntimeSettings {
   houseEdgePercent: number;
   commissionPercent: number;
@@ -260,10 +265,24 @@ export class GameEngine {
     if (this.activeBets.get(userId)?.[slot]) return { ok: false, message: `A ${slot} bet is already active.` };
     if (this.queuedBets.get(userId)?.[slot]) return { ok: false, message: `A ${slot} bet is already accepted for the next round.` };
 
+    if (queueForNextRound) {
+      const persistedQueuedBet = await GameBetModel.exists({
+        userId,
+        roundId: QUEUED_ROUND_ID,
+        slot,
+        status: "QUEUED"
+      });
+      if (persistedQueuedBet) {
+        await this.emitWalletForUser(userId);
+        return { ok: false, message: `A ${slot} bet is already accepted for the next round.` };
+      }
+    }
+
     const user = await UserModel.findById(userId).select("name").lean();
     if (!user) return { ok: false, message: "User account not found." };
 
     const reservedLiabilityMinor = calculateMaximumLiability(amountMinor, this.settings.maxCashoutMultiplier);
+    let effectiveBetReserve = reservedLiabilityMinor;
     const bet: PublicBet = {
       id: crypto.randomUUID(),
       player: this.maskName(String(user.name)),
@@ -285,35 +304,27 @@ export class GameEngine {
           if (!stateAfter) throw new Error("Platform accounting state is unavailable.");
         } else {
           const allocatableFactor = Math.max(0, 1 - this.settings.reservePercent / 100);
+          const currentState = await PlatformStateModel.findOne({ key: "global" }).session(session);
+          const availableMinor = Math.max(
+            0,
+            Math.floor(Number(currentState?.lossPoolMinor ?? 0) * allocatableFactor) -
+              Number(currentState?.reservedRewardLiquidityMinor ?? 0)
+          );
+          const hasLiquidity = availableMinor >= reservedLiabilityMinor;
+          const effectiveReserve = hasLiquidity ? reservedLiabilityMinor : 0;
+          if (!hasLiquidity) { bet.guaranteedMaxMultiplier = 1.00; effectiveBetReserve = 0; }
           stateAfter = await PlatformStateModel.findOneAndUpdate(
-            {
-              key: "global",
-              $expr: {
-                $gte: [
-                  {
-                    $subtract: [
-                      { $floor: { $multiply: [{ $ifNull: ["$lossPoolMinor", 0] }, allocatableFactor] } },
-                      { $ifNull: ["$reservedRewardLiquidityMinor", 0] }
-                    ]
-                  },
-                  reservedLiabilityMinor
-                ]
-              }
-            },
+            { key: "global" },
             {
               $inc: {
                 activeBetEscrowMinor: amountMinor,
-                reservedRewardLiquidityMinor: reservedLiabilityMinor,
+                reservedRewardLiquidityMinor: effectiveReserve,
                 totalBetVolumeMinor: amountMinor
               }
             },
             { new: true, session }
           );
-          if (!stateAfter) {
-            throw new Error(
-              `Insufficient peer liquidity to guarantee payouts up to ${this.settings.maxCashoutMultiplier.toFixed(2)}x.`
-            );
-          }
+          if (!stateAfter) throw new Error("Platform accounting state is unavailable.");
         }
 
         const updatedUser = await UserModel.findOneAndUpdate(
@@ -337,7 +348,7 @@ export class GameEngine {
             player: bet.player,
             slot,
             amountMinor,
-            reservedLiabilityMinor,
+            reservedLiabilityMinor: queueForNextRound ? reservedLiabilityMinor : effectiveBetReserve,
             amount: fromMinor(amountMinor),
             status: queueForNextRound ? "QUEUED" : "ACTIVE"
           }],
@@ -403,6 +414,15 @@ export class GameEngine {
 
       this.updateAccountingCache(stateAfter);
     } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        await this.emitWalletForUser(userId);
+        return {
+          ok: false,
+          message: queueForNextRound
+            ? `A ${slot} bet is already accepted for the next round.`
+            : `A ${slot} bet is already active for this round.`
+        };
+      }
       return { ok: false, message: error instanceof Error ? error.message : "Unable to place bet." };
     }
 
@@ -743,40 +763,29 @@ export class GameEngine {
       try {
         await mongoose.connection.transaction(async (session) => {
           const allocatableFactor = Math.max(0, 1 - this.settings.reservePercent / 100);
+          const currentState = await PlatformStateModel.findOne({ key: "global" }).session(session);
+          const availableMinor = Math.max(
+            0,
+            Math.floor(Number(currentState?.lossPoolMinor ?? 0) * allocatableFactor) -
+              Number(currentState?.reservedRewardLiquidityMinor ?? 0)
+          );
+          const hasLiquidity = availableMinor >= reservedLiabilityMinor;
+          const effectiveReserve = hasLiquidity ? reservedLiabilityMinor : 0;
           const stateAfter = await PlatformStateModel.findOneAndUpdate(
-            {
-              key: "global",
-              $expr: {
-                $gte: [
-                  {
-                    $subtract: [
-                      { $floor: { $multiply: [{ $ifNull: ["$lossPoolMinor", 0] }, allocatableFactor] } },
-                      { $ifNull: ["$reservedRewardLiquidityMinor", 0] }
-                    ]
-                  },
-                  reservedLiabilityMinor
-                ]
-              }
-            },
+            { key: "global" },
             {
               $inc: {
-                reservedRewardLiquidityMinor: reservedLiabilityMinor,
+                reservedRewardLiquidityMinor: effectiveReserve,
                 totalBetVolumeMinor: amountMinor
               }
             },
             { new: true, session }
           );
-          if (!stateAfter) {
-            throw new Error(
-              `Insufficient peer liquidity to process the queued bet up to ${(
-                1 + reservedLiabilityMinor / Math.max(1, amountMinor)
-              ).toFixed(2)}x.`
-            );
-          }
+          if (!stateAfter) throw new Error("Platform accounting state is unavailable.");
 
           activeDocument = await GameBetModel.findOneAndUpdate(
             { _id: queuedDocument._id, roundId: QUEUED_ROUND_ID, status: "QUEUED" },
-            { $set: { roundId: this.roundId, status: "ACTIVE" } },
+            { $set: { roundId: this.roundId, status: "ACTIVE", reservedLiabilityMinor: effectiveReserve } },
             { new: true, session }
           );
           if (!activeDocument) throw new Error("Queued bet has already been processed.");
@@ -817,15 +826,16 @@ export class GameEngine {
         continue;
       }
 
+      const activatedReserve = Number(activeDocument.reservedLiabilityMinor ?? 0);
       const activeBet: PublicBet = {
         id: String(activeDocument.betId),
         player: String(activeDocument.player),
         amount: fromMinor(amountMinor),
         slot,
         status: "ACTIVE",
-        guaranteedMaxMultiplier: Number((
-          1 + reservedLiabilityMinor / Math.max(1, amountMinor)
-        ).toFixed(2))
+        guaranteedMaxMultiplier: activatedReserve > 0
+          ? Number((1 + activatedReserve / Math.max(1, amountMinor)).toFixed(2))
+          : 1.00
       };
 
       const userActiveBets = this.activeBets.get(userId) ?? {};
@@ -858,7 +868,13 @@ export class GameEngine {
     await mongoose.connection.transaction(async (session) => {
       const refundedBet = await GameBetModel.findOneAndUpdate(
         { _id: queuedDocument._id, roundId: QUEUED_ROUND_ID, status: "QUEUED" },
-        { $set: { status: "REFUNDED", settledAt: new Date() } },
+        {
+          $set: {
+            status: "REFUNDED",
+            roundId: `__REFUNDED_NEXT_ROUND__:${String(queuedDocument.betId)}`,
+            settledAt: new Date()
+          }
+        },
         { new: true, session }
       );
       if (!refundedBet) return;
