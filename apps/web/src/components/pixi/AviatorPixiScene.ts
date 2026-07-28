@@ -271,19 +271,26 @@ export class AviatorPixiScene {
     );
     const visualMultiplier = Number(Math.max(1, liveMultiplier).toFixed(2));
     const flightPoint = this.calculateFlightPoint(width, height, elapsed);
-    this.lastFlightPoint = flightPoint;
+    const planeY = flightPoint.y + Math.sin(this.elapsedAnimation / 230) * Math.max(1.5, height * 0.006);
+    const planeRotation = -0.055 + flightPoint.progress * -0.04 + Math.sin(this.elapsedAnimation / 420) * 0.012;
+    const planeScale = this.getPlaneScale(width, height);
+    const tailPoint = this.calculatePlaneTailPoint(
+      flightPoint.x,
+      planeY,
+      planeRotation,
+      planeScale,
+      flightPoint.progress
+    );
 
-    this.drawFlightCurve(width, height, flightPoint);
+    this.lastFlightPoint = flightPoint;
+    this.drawFlightCurve(width, height, tailPoint);
     this.glow.alpha = clamp(0.28 + flightPoint.progress * 0.42, 0.28, 0.7);
 
     this.plane.visible = true;
     this.plane.alpha = 1;
-    this.plane.position.set(
-      flightPoint.x,
-      flightPoint.y + Math.sin(this.elapsedAnimation / 230) * Math.max(1.5, height * 0.006)
-    );
-    this.plane.rotation = -0.055 + flightPoint.progress * -0.04 + Math.sin(this.elapsedAnimation / 420) * 0.012;
-    this.plane.scale.set(this.getPlaneScale(width, height));
+    this.plane.position.set(flightPoint.x, planeY);
+    this.plane.rotation = planeRotation;
+    this.plane.scale.set(planeScale);
     this.spinPropeller(2.4);
 
     this.statusText.visible = false;
@@ -422,6 +429,26 @@ export class AviatorPixiScene {
       .moveTo(startX, baseY - 1)
       .bezierCurveTo(controlOneX, controlOneY - 1, controlTwoX, controlTwoY - 1, point.x, point.y - 1)
       .stroke({ color: 0xff4c78, width: clamp(height * 0.0028, 1, 1.8), alpha: 0.72, cap: "round" });
+  }
+
+  private calculatePlaneTailPoint(
+    planeX: number,
+    planeY: number,
+    rotation: number,
+    scale: number,
+    progress: number
+  ): FlightPoint {
+    // Local attachment point near the rear underside of the 190px-wide plane sprite.
+    const localTailX = -78;
+    const localTailY = 24;
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+
+    return {
+      x: planeX + (localTailX * cos - localTailY * sin) * scale,
+      y: planeY + (localTailX * sin + localTailY * cos) * scale,
+      progress
+    };
   }
 
   private calculateFlightPoint(width: number, height: number, elapsed: number): FlightPoint {
