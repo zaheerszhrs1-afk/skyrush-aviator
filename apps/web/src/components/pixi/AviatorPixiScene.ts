@@ -193,9 +193,9 @@ export class AviatorPixiScene {
     this.elapsedAnimation += deltaMS;
 
     if (this.round.phase === "RUNNING") {
-      this.rayRotation += deltaMS * 0.00009;
+      this.rayRotation = (this.rayRotation + deltaMS * 0.00009) % (Math.PI * 2);
     } else if (this.round.phase === "CRASHED") {
-      this.rayRotation += deltaMS * 0.000045;
+      this.rayRotation = (this.rayRotation + deltaMS * 0.000045) % (Math.PI * 2);
     } else {
       this.rayRotation *= 0.92;
       if (Math.abs(this.rayRotation) < 0.0001) this.rayRotation = 0;
@@ -342,20 +342,19 @@ export class AviatorPixiScene {
     this.background.roundRect(0, 0, width, height, 24).fill(0x030406);
 
     this.rays.clear();
-    const originX = 0;
-    const originY = height;
-    const radius = Math.hypot(width, height) * 1.75;
-    const rayCount = 18;
-    const startAngle = -Math.PI / 2 - 0.04;
-    const endAngle = -0.015;
-    const step = (endAngle - startAngle) / rayCount;
+    const originX = -Math.max(16, width * 0.015);
+    const originY = height + Math.max(16, height * 0.015);
+    const radius = Math.hypot(width, height) * 2.2;
+    const rayCount = 48;
+    const fullCircle = Math.PI * 2;
+    const step = fullCircle / rayCount;
 
     for (let index = 0; index < rayCount; index += 1) {
-      const angleA = startAngle + index * step;
+      const angleA = -Math.PI + index * step;
       const angleB = angleA + step;
       const isBlue = index % 2 === 0;
       const color = isBlue ? 0x0a1821 : 0x000000;
-      const alpha = isBlue ? 0.92 : 1;
+      const alpha = isBlue ? 0.9 : 1;
 
       this.rays
         .poly([
@@ -369,8 +368,8 @@ export class AviatorPixiScene {
         .fill({ color, alpha });
     }
 
-    this.rays.pivot.set(0, height);
-    this.rays.position.set(0, height);
+    this.rays.pivot.set(originX, originY);
+    this.rays.position.set(originX, originY);
     this.rays.rotation = this.rayRotation;
 
     this.glow.clear();
