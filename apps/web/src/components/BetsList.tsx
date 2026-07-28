@@ -19,7 +19,7 @@ export function BetsList({ bets, online }: Props) {
         <button className={tab === "top" ? "active" : ""} onClick={() => setTab("top")}>Top</button>
       </div>
       <div className="bets-summary">
-        <div><span className="avatars">🧑🏽‍🚀🧑🏻‍🚀🧑🏿‍🚀</span><strong>{bets.length} Bets · {online} Online</strong></div>
+        <div><strong>{bets.length} Bets · {online} Online</strong></div>
         <div><strong>{totalWin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong><span>Total win PKR</span></div>
       </div>
       <div className="progress"><span style={{ width: `${Math.min(100, 18 + bets.length)}%` }} /></div>

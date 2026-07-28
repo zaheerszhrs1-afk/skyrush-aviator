@@ -30,7 +30,7 @@ button { color: inherit; }
 .bets-card,.chat-panel,.game-graph,.bet-panel { border:1px solid #24272c; }
 .bets-card { background:#17191c; border-radius:22px; overflow:hidden; display:flex; flex-direction:column; min-height:0; }
 .tabs,.segmented { display:grid; grid-template-columns:repeat(3,1fr); gap:3px; padding:7px; background:#131518; border-radius:999px; margin:6px; }.tabs button,.segmented button { border:0;background:transparent;padding:8px;border-radius:999px;color:#bec2ca;cursor:pointer; }.tabs button.active,.segmented button.active { background:#30333a;color:white; }
-.bets-summary { display:flex; justify-content:space-between; align-items:center; padding:4px 16px 6px; }.bets-summary>div { display:flex; flex-direction:column; }.bets-summary>div:last-child { text-align:right; }.bets-summary strong { font-size:18px; }.bets-summary span { color:#a7abb4;font-size:12px; }.avatars { font-size:18px!important; }
+.bets-summary { display:flex; justify-content:space-between; align-items:center; padding:4px 16px 6px; }.bets-summary>div { display:flex; flex-direction:column; }.bets-summary>div:last-child { text-align:right; }.bets-summary strong { font-size:18px; }.bets-summary span { color:#a7abb4;font-size:12px; }
 .progress { height:5px;background:#2a2d31;margin:0 16px 8px;border-radius:4px;overflow:hidden; }.progress span { display:block;height:100%;background:#568d13; }
 .bets-head,.bet-row { display:grid; grid-template-columns:1.3fr .9fr .45fr .9fr; align-items:center; gap:8px; }.bets-head { padding:8px 18px;color:#7e838d;font-size:11px; }.bets-head span:not(:first-child) { text-align:right; }
 .bets-scroll { overflow:auto; min-height:0; padding:0 7px; scrollbar-width:thin; }.bet-row { margin-bottom:5px;padding:7px 10px;background:#121416;border-radius:18px;font-size:13px;color:#cdd1d8; }.bet-row>span:not(:first-child) { text-align:right; }.bet-row>span:first-child { display:flex;align-items:center;gap:7px; }.bet-row i { width:25px;height:25px;display:grid;place-items:center;background:#292d33;border-radius:50%;font-style:normal; }.bet-row.won { background:#19350c; }.bet-row.won>span:nth-child(3){color:#28b8ff}.bet-row.won>span:last-child{color:#e8f3e4}
@@ -218,10 +218,6 @@ button { color: inherit; }
     font-size: 12px;
   }
 
-  .avatars {
-    height: 24px;
-    line-height: 24px;
-  }
 
   .progress {
     margin: 0 17px 8px;

@@ -24,6 +24,7 @@ export class AviatorPixiScene {
   private crashStartedAt = 0;
   private lastFlightPoint: FlightPoint = { x: 0, y: 0, progress: 0 };
   private elapsedAnimation = 0;
+  private rayRotation = 0;
 
   private background: any;
   private rays: any;
@@ -190,6 +191,20 @@ export class AviatorPixiScene {
 
   private tick(deltaMS: number): void {
     this.elapsedAnimation += deltaMS;
+
+    if (this.round.phase === "RUNNING") {
+      this.rayRotation = (this.rayRotation + deltaMS * 0.00009) % (Math.PI * 2);
+    } else if (this.round.phase === "CRASHED") {
+      this.rayRotation = (this.rayRotation + deltaMS * 0.000045) % (Math.PI * 2);
+    } else {
+      this.rayRotation *= 0.92;
+      if (Math.abs(this.rayRotation) < 0.0001) this.rayRotation = 0;
+    }
+
+    if (this.rays) {
+      this.rays.rotation = this.rayRotation;
+    }
+
     this.renderFrame();
   }
 
@@ -256,19 +271,26 @@ export class AviatorPixiScene {
     );
     const visualMultiplier = Number(Math.max(1, liveMultiplier).toFixed(2));
     const flightPoint = this.calculateFlightPoint(width, height, elapsed);
-    this.lastFlightPoint = flightPoint;
+    const planeY = flightPoint.y + Math.sin(this.elapsedAnimation / 230) * Math.max(1.5, height * 0.006);
+    const planeRotation = -0.055 + flightPoint.progress * -0.04 + Math.sin(this.elapsedAnimation / 420) * 0.012;
+    const planeScale = this.getPlaneScale(width, height);
+    const tailPoint = this.calculatePlaneTailPoint(
+      flightPoint.x,
+      planeY,
+      planeRotation,
+      planeScale,
+      flightPoint.progress
+    );
 
-    this.drawFlightCurve(width, height, flightPoint);
+    this.lastFlightPoint = flightPoint;
+    this.drawFlightCurve(width, height, tailPoint);
     this.glow.alpha = clamp(0.28 + flightPoint.progress * 0.42, 0.28, 0.7);
 
     this.plane.visible = true;
     this.plane.alpha = 1;
-    this.plane.position.set(
-      flightPoint.x,
-      flightPoint.y + Math.sin(this.elapsedAnimation / 230) * Math.max(1.5, height * 0.006)
-    );
-    this.plane.rotation = -0.055 + flightPoint.progress * -0.04 + Math.sin(this.elapsedAnimation / 420) * 0.012;
-    this.plane.scale.set(this.getPlaneScale(width, height));
+    this.plane.position.set(flightPoint.x, planeY);
+    this.plane.rotation = planeRotation;
+    this.plane.scale.set(planeScale);
     this.spinPropeller(2.4);
 
     this.statusText.visible = false;
@@ -324,21 +346,23 @@ export class AviatorPixiScene {
 
   private drawStaticScene(width: number, height: number): void {
     this.background.clear();
-    this.background.rect(0, 0, width, height).fill(0x050607);
+    this.background.roundRect(0, 0, width, height, 24).fill(0x030406);
 
     this.rays.clear();
-    const originX = 0;
-    const originY = height;
-    const radius = Math.hypot(width, height) * 1.45;
-    const rayCount = 17;
-    const startAngle = -Math.PI / 2;
-    const endAngle = -0.035;
-    const step = (endAngle - startAngle) / rayCount;
+    const originX = -Math.max(16, width * 0.015);
+    const originY = height + Math.max(16, height * 0.015);
+    const radius = Math.hypot(width, height) * 2.2;
+    const rayCount = 48;
+    const fullCircle = Math.PI * 2;
+    const step = fullCircle / rayCount;
 
     for (let index = 0; index < rayCount; index += 1) {
-      const angleA = startAngle + index * step;
+      const angleA = -Math.PI + index * step;
       const angleB = angleA + step;
-      const color = index % 2 === 0 ? 0x111416 : 0x000000;
+      const isBlue = index % 2 === 0;
+      const color = isBlue ? 0x0a1821 : 0x000000;
+      const alpha = isBlue ? 0.9 : 1;
+
       this.rays
         .poly([
           originX,
@@ -348,20 +372,29 @@ export class AviatorPixiScene {
           originX + Math.cos(angleB) * radius,
           originY + Math.sin(angleB) * radius
         ], true)
-        .fill({ color, alpha: index % 2 === 0 ? 0.94 : 1 });
+        .fill({ color, alpha });
     }
+
+    this.rays.pivot.set(originX, originY);
+    this.rays.position.set(originX, originY);
+    this.rays.rotation = this.rayRotation;
 
     this.glow.clear();
     const glowX = width * 0.53;
-    const glowY = height * 0.49;
-    const glowWidth = width * 0.78;
-    const glowHeight = height * 0.82;
-    for (let index = 7; index >= 1; index -= 1) {
-      const ratio = index / 7;
+    const glowY = height * 0.45;
+    const glowWidth = width * 0.92;
+    const glowHeight = height * 0.96;
+
+    for (let index = 8; index >= 1; index -= 1) {
+      const ratio = index / 8;
       this.glow
         .ellipse(glowX, glowY, glowWidth * ratio * 0.5, glowHeight * ratio * 0.5)
-        .fill({ color: 0x087fbd, alpha: 0.018 + (1 - ratio) * 0.026 });
+        .fill({ color: 0x0f6ea0, alpha: 0.018 + (1 - ratio) * 0.032 });
     }
+
+    this.glow
+      .ellipse(width * 0.52, height * 0.47, width * 0.22, height * 0.18)
+      .fill({ color: 0x56c6ff, alpha: 0.07 });
   }
 
   private drawFlightCurve(width: number, height: number, point: FlightPoint): void {
@@ -396,6 +429,26 @@ export class AviatorPixiScene {
       .moveTo(startX, baseY - 1)
       .bezierCurveTo(controlOneX, controlOneY - 1, controlTwoX, controlTwoY - 1, point.x, point.y - 1)
       .stroke({ color: 0xff4c78, width: clamp(height * 0.0028, 1, 1.8), alpha: 0.72, cap: "round" });
+  }
+
+  private calculatePlaneTailPoint(
+    planeX: number,
+    planeY: number,
+    rotation: number,
+    scale: number,
+    progress: number
+  ): FlightPoint {
+    // Local attachment point near the rear underside of the 190px-wide plane sprite.
+    const localTailX = -78;
+    const localTailY = 24;
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+
+    return {
+      x: planeX + (localTailX * cos - localTailY * sin) * scale,
+      y: planeY + (localTailX * sin + localTailY * cos) * scale,
+      progress
+    };
   }
 
   private calculateFlightPoint(width: number, height: number, elapsed: number): FlightPoint {
