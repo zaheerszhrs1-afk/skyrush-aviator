@@ -27,7 +27,7 @@ export function BetsList({ bets, online }: Props) {
       <div className="bets-scroll">
         {rows.map((bet, index) => (
           <div key={bet.id} className={`bet-row ${bet.status === "CASHED_OUT" ? "won" : ""}`}>
-            <span><i>{["🌌", "🪐", "🚀", "🌍", "🌙"][index % 5]}</i>{bet.player}</span>
+            <span><i>{["🌌", "🪐", "🚀", "🌍", "🌙"][index % 5]}</i><b>{bet.player}</b>{bet.isDemoBot && <em className="demo-bot-badge">DEMO BOT</em>}</span>
             <span>{bet.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
             <span>{bet.cashoutMultiplier ? `${bet.cashoutMultiplier.toFixed(2)}x` : ""}</span>
             <span>{bet.payout ? bet.payout.toLocaleString(undefined, { minimumFractionDigits: 2 }) : ""}</span>

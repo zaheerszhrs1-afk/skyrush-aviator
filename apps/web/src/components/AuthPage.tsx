@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiRequest } from "../lib/api";
 import type { AuthUser } from "../types";
 import { Logo } from "./Logo";
@@ -14,6 +14,45 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const googleButton = useRef<HTMLDivElement>(null);
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ?? "";
+
+  useEffect(() => {
+    if (!googleClientId || !googleButton.current) return;
+    let attempts = 0;
+    const render = () => {
+      const google = window.google;
+      if (!google?.accounts?.id || !googleButton.current) {
+        attempts += 1;
+        if (attempts < 40) window.setTimeout(render, 150);
+        return;
+      }
+      google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: (response) => {
+          setBusy(true);
+          setMessage("");
+          void apiRequest<{ ok: true; user: AuthUser }>("/api/auth/google", {
+            method: "POST",
+            body: JSON.stringify({ credential: response.credential })
+          })
+            .then((result) => onAuthenticated(result.user))
+            .catch((error) => setMessage(error instanceof Error ? error.message : "Google sign-in failed."))
+            .finally(() => setBusy(false));
+        }
+      });
+      googleButton.current.replaceChildren();
+      google.accounts.id.renderButton(googleButton.current, {
+        type: "standard",
+        theme: "filled_black",
+        size: "large",
+        text: "continue_with",
+        shape: "pill",
+        width: 360
+      });
+    };
+    render();
+  }, [googleClientId, onAuthenticated]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -40,7 +79,18 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
       <section className="auth-card">
         <div className="auth-brand"><Logo /></div>
         <h1>{mode === "LOGIN" ? "Welcome back" : "Create your account"}</h1>
-        <p>Secure access to your wallet, bets, deposits and withdrawals.</p>
+        <p>Secure access to your wallet, real bets and risk-free demo play.</p>
+
+        {googleClientId && (
+          <>
+            <div className="google-login-wrap" aria-busy={busy}>
+              <div ref={googleButton} />
+              <small>Google sign-in is available for user accounts only.</small>
+            </div>
+            <div className="auth-divider"><span>or use email</span></div>
+          </>
+        )}
+
         <form onSubmit={submit}>
           {mode === "REGISTER" && (
             <label>

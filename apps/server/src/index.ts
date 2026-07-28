@@ -6,10 +6,11 @@ import express, { type NextFunction, type Request, type Response } from "express
 import cors from "cors";
 import mongoose from "mongoose";
 import { Server } from "socket.io";
+import { OAuth2Client } from "google-auth-library";
 import { GameEngine } from "./game-engine.js";
 import { reconcile } from "./accounting.js";
-import { fromMinor } from "./money.js";
-import type { BetSlot } from "./types.js";
+import { fromMinor, toMinor } from "./money.js";
+import type { AccountMode, BetSlot } from "./types.js";
 import { bootstrapAdmin, createAuthSession, destroyAuthSession, hashPassword, optionalAuth, publicUser, requireAdmin, requireAuth, resolveAuthUserFromCookie, verifyPassword, type AuthenticatedRequest } from "./auth.js";
 import { connectDatabase, disconnectDatabase } from "./database.js";
 import { createDepositRequest, createWithdrawalRequest, reviewDeposit, reviewWithdrawal } from "./finance.js";
@@ -35,6 +36,9 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN ?? "")
   .map((origin) => origin.trim())
   .filter(Boolean);
 const corsOrigin = allowedOrigins.length > 0 ? allowedOrigins : true;
+const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim() ?? "";
+const googleClient = new OAuth2Client(googleClientId || undefined);
+const demoStartingBalanceMinor = toMinor(Number(process.env.DEMO_STARTING_BALANCE ?? 100_000));
 
 const asyncRoute = (handler: (request: any, response: Response, next: NextFunction) => Promise<void>) =>
   (request: Request, response: Response, next: NextFunction) => void handler(request, response, next).catch(next);
@@ -90,17 +94,83 @@ app.post("/api/auth/register", asyncRoute(async (request, response) => {
     name,
     email,
     passwordHash: await hashPassword(password),
+    authProvider: "PASSWORD",
     role: "USER",
     status: "ACTIVE",
     balanceMinor: 0,
     withdrawalLockedMinor: 0,
     bettingLockedMinor: 0,
     pendingRewardsMinor: 0,
+    demoBalanceMinor: demoStartingBalanceMinor,
     balance: 0,
     lockedBalance: 0
   });
   await createAuthSession(String(user._id), request, response);
   response.status(201).json({ ok: true, user: publicUser(user) });
+}));
+
+app.post("/api/auth/google", asyncRoute(async (request, response) => {
+  if (!googleClientId) {
+    response.status(503).json({ ok: false, message: "Google sign-in is not configured." });
+    return;
+  }
+  const credential = cleanText(request.body?.credential, 10_000);
+  if (!credential) {
+    response.status(400).json({ ok: false, message: "Google credential is required." });
+    return;
+  }
+
+  const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: googleClientId });
+  const payload = ticket.getPayload();
+  const email = payload?.email?.trim().toLowerCase() ?? "";
+  const googleSub = payload?.sub?.trim() ?? "";
+  if (!googleSub || !email || payload?.email_verified !== true) {
+    response.status(401).json({ ok: false, message: "Google did not provide a verified user email." });
+    return;
+  }
+
+  let user = await UserModel.findOne({ $or: [{ googleSub }, { email }] }).select("+googleSub");
+  if (user?.role === "ADMIN") {
+    response.status(403).json({ ok: false, message: "Administrators must use email and password login." });
+    return;
+  }
+  if (user && user.googleSub && String(user.googleSub) !== googleSub) {
+    response.status(409).json({ ok: false, message: "This email is already linked to another Google identity." });
+    return;
+  }
+
+  if (!user) {
+    user = await UserModel.create({
+      name: cleanText(payload?.name || email.split("@")[0], 80),
+      email,
+      googleSub,
+      avatarUrl: cleanText(payload?.picture, 500),
+      authProvider: "GOOGLE",
+      role: "USER",
+      status: "ACTIVE",
+      balanceMinor: 0,
+      withdrawalLockedMinor: 0,
+      bettingLockedMinor: 0,
+      pendingRewardsMinor: 0,
+      demoBalanceMinor: demoStartingBalanceMinor,
+      balance: 0,
+      lockedBalance: 0,
+      lastLoginAt: new Date()
+    });
+  } else {
+    if (user.status !== "ACTIVE") {
+      response.status(403).json({ ok: false, message: "This account is suspended." });
+      return;
+    }
+    user.googleSub = googleSub;
+    user.avatarUrl = cleanText(payload?.picture, 500);
+    user.authProvider = user.authProvider === "PASSWORD" ? "HYBRID" : "GOOGLE";
+    user.lastLoginAt = new Date();
+    await user.save();
+  }
+
+  await createAuthSession(String(user._id), request, response);
+  response.json({ ok: true, user: publicUser(user) });
 }));
 
 app.post("/api/auth/login", asyncRoute(async (request, response) => {
@@ -146,6 +216,15 @@ await engine.initialize();
 
 app.get("/api/wallet", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
   response.json({ ok: true, wallet: await engine.getWallet(request.authUser!.id) });
+}));
+
+app.post("/api/demo/reset", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
+  if (request.authUser!.role !== "USER") {
+    response.status(403).json({ ok: false, message: "Demo mode is available to user accounts only." });
+    return;
+  }
+  const wallet = await engine.resetDemoBalance(request.authUser!.id);
+  response.json({ ok: true, wallet });
 }));
 
 app.get("/api/wallet/transactions", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
@@ -548,14 +627,16 @@ io.on("connection", async (socket) => {
     createdAt: new Date(item.createdAt as Date).getTime()
   })));
 
-  socket.on("bet:place", async (payload: { slot?: BetSlot; amount?: number }, acknowledge?: (result: unknown) => void) => {
+  socket.on("bet:place", async (payload: { slot?: BetSlot; amount?: number; mode?: AccountMode }, acknowledge?: (result: unknown) => void) => {
     const slot = payload?.slot === "right" ? "right" : "left";
-    acknowledge?.(await engine.placeBet(authUser.id, slot, Number(payload?.amount)));
+    const mode: AccountMode = payload?.mode === "DEMO" ? "DEMO" : "REAL";
+    acknowledge?.(await engine.placeBet(authUser.id, slot, Number(payload?.amount), mode));
   });
 
-  socket.on("bet:cashout", async (payload: { slot?: BetSlot }, acknowledge?: (result: unknown) => void) => {
+  socket.on("bet:cashout", async (payload: { slot?: BetSlot; mode?: AccountMode }, acknowledge?: (result: unknown) => void) => {
     const slot = payload?.slot === "right" ? "right" : "left";
-    acknowledge?.(await engine.cashOut(authUser.id, slot));
+    const mode: AccountMode = payload?.mode === "DEMO" ? "DEMO" : "REAL";
+    acknowledge?.(await engine.cashOut(authUser.id, slot, mode));
   });
 
   socket.on("chat:send", async (payload: { message?: string }) => {

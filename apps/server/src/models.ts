@@ -2,6 +2,7 @@ import { Schema, model } from "mongoose";
 
 export type UserRole = "USER" | "ADMIN";
 export type UserStatus = "ACTIVE" | "SUSPENDED";
+export type AuthProvider = "PASSWORD" | "GOOGLE" | "HYBRID";
 export type TransactionType =
   | "DEPOSIT_CREDIT"
   | "WITHDRAWAL_LOCK"
@@ -32,7 +33,10 @@ const userSchema = new Schema(
   {
     name: { type: String, required: true, trim: true, minlength: 2, maxlength: 80 },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
-    passwordHash: { type: String, required: true, select: false },
+    passwordHash: { type: String, select: false },
+    authProvider: { type: String, enum: ["PASSWORD", "GOOGLE", "HYBRID"], default: "PASSWORD" },
+    googleSub: { type: String, unique: true, sparse: true, index: true, select: false },
+    avatarUrl: { type: String, default: "", maxlength: 500 },
     role: { type: String, enum: ["USER", "ADMIN"], default: "USER", index: true },
     status: { type: String, enum: ["ACTIVE", "SUSPENDED"], default: "ACTIVE", index: true },
 
@@ -41,6 +45,7 @@ const userSchema = new Schema(
     withdrawalLockedMinor: { type: Number, default: 0, min: 0 },
     bettingLockedMinor: { type: Number, default: 0, min: 0 },
     pendingRewardsMinor: { type: Number, default: 0, min: 0 },
+    demoBalanceMinor: { type: Number, default: 10_000_000, min: 0 },
 
     // Legacy PKR fields are retained during migration and mirrored for compatibility.
     balance: { type: Number, default: 0, min: 0 },
@@ -234,6 +239,28 @@ const gameBetSchema = new Schema(
 gameBetSchema.index({ userId: 1, roundId: 1, slot: 1 }, { unique: true });
 gameBetSchema.index({ roundId: 1, status: 1 });
 
+
+const demoBetSchema = new Schema(
+  {
+    betId: { type: String, required: true, unique: true, index: true },
+    roundId: { type: String, required: true, index: true },
+    userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    player: { type: String, required: true },
+    slot: { type: String, enum: ["left", "right"], required: true },
+    amountMinor: { type: Number, required: true, min: 1 },
+    payoutMinor: { type: Number, default: 0, min: 0 },
+    commissionMinor: { type: Number, default: 0, min: 0 },
+    amount: { type: Number, required: true, min: 0.01 },
+    status: { type: String, enum: ["ACTIVE", "CASHED_OUT", "LOST", "REFUNDED"], default: "ACTIVE", index: true },
+    cashoutMultiplier: { type: Number },
+    payout: { type: Number, default: 0 },
+    settledAt: { type: Date }
+  },
+  { timestamps: true, versionKey: false }
+);
+demoBetSchema.index({ userId: 1, roundId: 1, slot: 1 }, { unique: true });
+demoBetSchema.index({ roundId: 1, status: 1 });
+
 const platformAuditSchema = new Schema(
   {
     eventKey: { type: String, required: true, unique: true, index: true },
@@ -291,5 +318,6 @@ export const PlatformSettingsModel = model("PlatformSettings", platformSettingsS
 export const PlatformStateModel = model("PlatformState", platformStateSchema);
 export const GameRoundModel = model("GameRound", gameRoundSchema);
 export const GameBetModel = model("GameBet", gameBetSchema);
+export const DemoBetModel = model("DemoBet", demoBetSchema);
 export const PlatformAuditModel = model("PlatformAudit", platformAuditSchema);
 export const ChatMessageModel = model("ChatMessage", chatMessageSchema);

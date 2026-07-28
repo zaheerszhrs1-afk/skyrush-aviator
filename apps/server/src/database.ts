@@ -21,9 +21,11 @@ async function migrateMinorUnitFields(): Promise<void> {
       { balanceMinor: { $exists: false } },
       { withdrawalLockedMinor: { $exists: false } },
       { bettingLockedMinor: { $exists: false } },
-      { pendingRewardsMinor: { $exists: false } }
+      { pendingRewardsMinor: { $exists: false } },
+      { demoBalanceMinor: { $exists: false } },
+      { authProvider: { $exists: false } }
     ]
-  }).select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor").lean();
+  }).select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor demoBalanceMinor authProvider role").lean();
 
   if (users.length > 0) {
     await UserModel.bulkWrite(users.map((user: any) => ({
@@ -36,7 +38,13 @@ async function migrateMinorUnitFields(): Promise<void> {
               ? Number(user.withdrawalLockedMinor)
               : safeMinor(user.lockedBalance),
             bettingLockedMinor: Number.isSafeInteger(Number(user.bettingLockedMinor)) ? Number(user.bettingLockedMinor) : 0,
-            pendingRewardsMinor: Number.isSafeInteger(Number(user.pendingRewardsMinor)) ? Number(user.pendingRewardsMinor) : 0
+            pendingRewardsMinor: Number.isSafeInteger(Number(user.pendingRewardsMinor)) ? Number(user.pendingRewardsMinor) : 0,
+            demoBalanceMinor: Number.isSafeInteger(Number(user.demoBalanceMinor))
+              ? Number(user.demoBalanceMinor)
+              : user.role === "ADMIN"
+                ? 0
+                : toMinor(Number(process.env.DEMO_STARTING_BALANCE ?? 100_000)),
+            authProvider: user.authProvider ?? "PASSWORD"
           }
         }
       }

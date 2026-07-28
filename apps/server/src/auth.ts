@@ -1,7 +1,7 @@
 import * as crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { promisify } from "node:util";
-import { AuthSessionModel, UserModel, type UserRole } from "./models.js";
+import { AuthSessionModel, UserModel, type AuthProvider, type UserRole } from "./models.js";
 import { fromMinor, minorFromDocument } from "./money.js";
 
 const scryptAsync = promisify(crypto.scrypt);
@@ -19,6 +19,9 @@ export interface AuthUser {
   bettingLockedBalance: number;
   pendingRewards: number;
   totalBalance: number;
+  demoBalance: number;
+  authProvider: AuthProvider;
+  avatarUrl: string;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -65,6 +68,9 @@ export function publicUser(document: any): AuthUser {
   const pendingRewardsMinor = Number.isSafeInteger(Number(document?.pendingRewardsMinor))
     ? Number(document.pendingRewardsMinor)
     : 0;
+  const demoBalanceMinor = Number.isSafeInteger(Number(document?.demoBalanceMinor))
+    ? Number(document.demoBalanceMinor)
+    : 0;
 
   return {
     id: String(document._id),
@@ -76,7 +82,10 @@ export function publicUser(document: any): AuthUser {
     lockedBalance: fromMinor(withdrawalLockedMinor),
     bettingLockedBalance: fromMinor(bettingLockedMinor),
     pendingRewards: fromMinor(pendingRewardsMinor),
-    totalBalance: fromMinor(balanceMinor + withdrawalLockedMinor + bettingLockedMinor + pendingRewardsMinor)
+    totalBalance: fromMinor(balanceMinor + withdrawalLockedMinor + bettingLockedMinor + pendingRewardsMinor),
+    demoBalance: fromMinor(demoBalanceMinor),
+    authProvider: (document.authProvider ?? "PASSWORD") as AuthProvider,
+    avatarUrl: String(document.avatarUrl ?? "")
   };
 }
 
@@ -177,12 +186,14 @@ export async function bootstrapAdmin(): Promise<void> {
     name: process.env.ADMIN_NAME?.trim() || "Platform Admin",
     email,
     passwordHash: await hashPassword(password),
+    authProvider: "PASSWORD",
     role: "ADMIN",
     status: "ACTIVE",
     balanceMinor: 0,
     withdrawalLockedMinor: 0,
     bettingLockedMinor: 0,
     pendingRewardsMinor: 0,
+    demoBalanceMinor: 0,
     balance: 0,
     lockedBalance: 0
   });

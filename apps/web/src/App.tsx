@@ -9,7 +9,7 @@ import { FinanceModal } from "./components/FinanceModal";
 import { AdminPanel } from "./components/AdminPanel";
 import { apiRequest } from "./lib/api";
 import { socket } from "./lib/socket";
-import type { AuthUser, ChatItem, RoundSnapshot, WalletSnapshot } from "./types";
+import type { AccountMode, AuthUser, ChatItem, RoundSnapshot, WalletSnapshot } from "./types";
 import "./styles.css";
 
 const emptyRound: RoundSnapshot = {
@@ -21,7 +21,9 @@ const emptyRound: RoundSnapshot = {
   commit: "",
   history: [],
   bets: [],
+  demoBets: [],
   online: 0,
+  demoOnline: 75,
   houseEdgePercent: 1,
   lossPool: 0,
   commissionPercent: 10,
@@ -35,7 +37,9 @@ const emptyWallet: WalletSnapshot = {
   bettingLockedBalance: 0,
   pendingRewards: 0,
   totalBalance: 0,
-  activeBets: {}
+  activeBets: {},
+  demoBalance: 0,
+  demoActiveBets: {}
 };
 
 export default function App() {
@@ -50,6 +54,8 @@ export default function App() {
   const [financeOpen, setFinanceOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [adminView, setAdminView] = useState(window.location.pathname.startsWith("/admin"));
+  const [accountMode, setAccountMode] = useState<AccountMode>("REAL");
+  const [demoResetBusy, setDemoResetBusy] = useState(false);
 
   useEffect(() => {
     void apiRequest<{ user: AuthUser }>("/api/auth/me")
@@ -97,6 +103,9 @@ export default function App() {
   }, [user?.id]);
 
   const statusLabel = useMemo(() => connected ? "Live" : "Reconnecting", [connected]);
+  const visibleBets = accountMode === "DEMO" ? round.demoBets : round.bets;
+  const visibleOnline = accountMode === "DEMO" ? round.demoOnline : round.online;
+  const visibleBalance = accountMode === "DEMO" ? wallet.demoBalance : wallet.balance;
 
   const logout = async () => {
     await apiRequest("/api/auth/logout", { method: "POST" }).catch(() => undefined);
@@ -104,7 +113,20 @@ export default function App() {
     setUser(null);
     setWallet(emptyWallet);
     setAdminView(false);
+    setAccountMode("REAL");
     window.history.replaceState({}, "", "/");
+  };
+
+  const resetDemo = async () => {
+    setDemoResetBusy(true);
+    try {
+      const result = await apiRequest<{ wallet: WalletSnapshot }>("/api/demo/reset", { method: "POST" });
+      setWallet(result.wallet);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to reset demo balance.");
+    } finally {
+      setDemoResetBusy(false);
+    }
   };
 
   const openAdmin = () => {
@@ -122,19 +144,32 @@ export default function App() {
   if (adminView && user.role === "ADMIN") return <AdminPanel onBack={closeAdmin} />;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${accountMode === "DEMO" ? "demo-mode" : ""}`}>
       <header className="topbar">
         <button className="back">‹</button>
         <Logo />
+        {user.role === "USER" && (
+          <div className="mode-switch" aria-label="Account mode">
+            <button className={accountMode === "REAL" ? "active" : ""} onClick={() => setAccountMode("REAL")}>Real</button>
+            <button className={accountMode === "DEMO" ? "active" : ""} onClick={() => setAccountMode("DEMO")}>Demo</button>
+          </div>
+        )}
         <div className="top-actions">
-          <button onClick={() => setFinanceOpen(true)}>Add Cash</button>
+          {accountMode === "REAL" ? (
+            <button onClick={() => setFinanceOpen(true)}>Add Cash</button>
+          ) : (
+            <button onClick={() => void resetDemo()} disabled={demoResetBusy}>{demoResetBusy ? "Resetting…" : "Reset Demo"}</button>
+          )}
           <div className="profile-wrap">
-            <button className="profile" aria-label="Profile" onClick={() => setProfileOpen((value) => !value)}>{user.name.slice(0, 1).toUpperCase()}</button>
+            <button className="profile" aria-label="Profile" onClick={() => setProfileOpen((value) => !value)}>
+              {user.avatarUrl ? <img src={user.avatarUrl} alt="" referrerPolicy="no-referrer" /> : user.name.slice(0, 1).toUpperCase()}
+            </button>
             {profileOpen && (
               <div className="profile-menu">
                 <strong>{user.name}</strong>
                 <span>{user.email}</span>
-                <button onClick={() => setFinanceOpen(true)}>Wallet & payments</button>
+                <small>{user.authProvider === "GOOGLE" ? "Google account" : user.authProvider === "HYBRID" ? "Email + Google" : "Email account"}</small>
+                {accountMode === "REAL" ? <button onClick={() => setFinanceOpen(true)}>Wallet & payments</button> : <button onClick={() => void resetDemo()}>Reset demo balance</button>}
                 {user.role === "ADMIN" && <button onClick={openAdmin}>Admin panel</button>}
                 <button className="danger-text" onClick={() => void logout()}>Sign out</button>
               </div>
@@ -143,18 +178,20 @@ export default function App() {
         </div>
       </header>
       <div className="game-title-row">
-        <div className="game-name">SkyRush</div>
+        <div className="game-name">SkyRush {accountMode === "DEMO" && <span className="demo-mode-badge">DEMO</span>}</div>
         <div className="balance">
           <span className={`connection ${connected ? "ok" : ""}`}>{statusLabel}</span>
-          <strong>{wallet.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> PKR
-          {(wallet.lockedBalance > 0 || wallet.bettingLockedBalance > 0) && <span className="locked-balance">Locked {(wallet.lockedBalance + wallet.bettingLockedBalance).toLocaleString()} PKR</span>}
-          <button className="toolbar-button" aria-label="Wallet" onClick={() => setFinanceOpen(true)}>☰</button>
+          <strong>{visibleBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> PKR
+          {accountMode === "REAL" && (wallet.lockedBalance > 0 || wallet.bettingLockedBalance > 0) && <span className="locked-balance">Locked {(wallet.lockedBalance + wallet.bettingLockedBalance).toLocaleString()} PKR</span>}
+          {accountMode === "REAL" && <button className="toolbar-button" aria-label="Wallet" onClick={() => setFinanceOpen(true)}>☰</button>}
           <button className="toolbar-button chat-symbol" aria-label="Chat" onClick={() => setChatOpen((value) => !value)}>◯</button>
         </div>
       </div>
 
+      {accountMode === "DEMO" && <div className="demo-disclosure">Demo mode uses virtual funds. The 75 displayed bots and their bet amounts are simulated and excluded from real wallets, deposits, withdrawals, liquidity, and platform revenue.</div>}
+
       <main className={`game-layout ${chatOpen ? "chat-open" : ""}`}>
-        <BetsList bets={round.bets} online={round.online} />
+        <BetsList bets={visibleBets} online={visibleOnline} />
         <section className="center-column">
           <div className="history-strip">
             {round.history.map((value, index) => <span className={value < 2 ? "blue" : value < 10 ? "purple" : "pink"} key={`${value}-${index}`}>{value.toFixed(2)}x</span>)}
@@ -163,14 +200,14 @@ export default function App() {
           </div>
           <GameGraph round={round} now={now} />
           <div className="bet-panels">
-            <BetPanel slot="left" round={round} wallet={wallet} />
-            <BetPanel slot="right" round={round} wallet={wallet} />
+            <BetPanel slot="left" round={round} wallet={wallet} accountMode={accountMode} />
+            <BetPanel slot="right" round={round} wallet={wallet} accountMode={accountMode} />
           </div>
         </section>
-        <ChatPanel chat={chat} online={round.online} />
+        <ChatPanel chat={chat} online={visibleOnline} />
       </main>
       <button className="floating-chat" aria-label="Toggle chat" onClick={() => setChatOpen((value) => !value)}>💬</button>
-      {financeOpen && <FinanceModal wallet={wallet} onClose={() => setFinanceOpen(false)} onWalletRefresh={setWallet} />}
+      {financeOpen && accountMode === "REAL" && <FinanceModal wallet={wallet} onClose={() => setFinanceOpen(false)} onWalletRefresh={setWallet} />}
     </div>
   );
 }

@@ -1,6 +1,8 @@
 export type RoundPhase = "WAITING" | "RUNNING" | "CRASHED";
 export type BetSlot = "left" | "right";
+export type AccountMode = "REAL" | "DEMO";
 export type UserRole = "USER" | "ADMIN";
+export type AuthProvider = "PASSWORD" | "GOOGLE" | "HYBRID";
 
 export interface PublicBet {
   id: string;
@@ -11,6 +13,8 @@ export interface PublicBet {
   cashoutMultiplier?: number;
   payout?: number;
   guaranteedMaxMultiplier?: number;
+  isDemo?: boolean;
+  isDemoBot?: boolean;
 }
 
 export interface RoundSnapshot {
@@ -23,7 +27,9 @@ export interface RoundSnapshot {
   commit: string;
   history: number[];
   bets: PublicBet[];
+  demoBets: PublicBet[];
   online: number;
+  demoOnline: number;
   houseEdgePercent: number;
   lossPool: number;
   commissionPercent: number;
@@ -39,6 +45,8 @@ export interface WalletSnapshot {
   pendingRewards: number;
   totalBalance: number;
   activeBets: Partial<Record<BetSlot, PublicBet>>;
+  demoBalance: number;
+  demoActiveBets: Partial<Record<BetSlot, PublicBet>>;
 }
 
 export interface AuthUser {
@@ -47,11 +55,14 @@ export interface AuthUser {
   email: string;
   role: UserRole;
   status: "ACTIVE" | "SUSPENDED";
+  authProvider: AuthProvider;
+  avatarUrl: string;
   balance: number;
   lockedBalance: number;
   bettingLockedBalance: number;
   pendingRewards: number;
   totalBalance: number;
+  demoBalance: number;
 }
 
 export interface ChatItem {
