@@ -29,6 +29,7 @@ export interface RoundSnapshot {
   bets: PublicBet[];
   demoBets: PublicBet[];
   online: number;
+  automatedOnline: number;
   demoOnline: number;
   houseEdgePercent: number;
   lossPool: number;

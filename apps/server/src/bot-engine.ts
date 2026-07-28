@@ -79,6 +79,10 @@ export class BotEngine {
     return BOT_COUNT + Math.max(0, connectedUsers);
   }
 
+  getAutomatedParticipantCount(): number {
+    return BOT_COUNT;
+  }
+
   private seeded(roundId: string, index: number, label: string): number {
     const hash = crypto.createHash("sha256").update(`${roundId}:${index}:${label}`).digest();
     return hash.readUInt32BE(0) / 0xffffffff;

@@ -121,7 +121,7 @@ export class AviatorPixiScene {
       text: "0",
       style: {
         fontFamily: "Arial, Helvetica, sans-serif",
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: "700",
         fill: 0xf4f4f5
       }
@@ -162,7 +162,7 @@ export class AviatorPixiScene {
     }
     this.round = round;
     if (this.audienceText) {
-      this.audienceText.text = String(Math.max(0, round.online));
+      this.audienceText.text = String(Math.max(0, round.online + round.automatedOnline));
     }
   }
 
@@ -508,7 +508,7 @@ export class AviatorPixiScene {
   }
 
   private drawAudience(width: number, height: number): void {
-    const pillWidth = 112;
+    const pillWidth = 138;
     const pillHeight = 38;
     this.audience.position.set(width - pillWidth - 9, height - pillHeight - 8);
     this.audienceBackground.clear();
@@ -516,7 +516,7 @@ export class AviatorPixiScene {
       .roundRect(0, 0, pillWidth, pillHeight, pillHeight / 2)
       .fill({ color: 0x111315, alpha: 0.94 })
       .stroke({ color: 0x1e2226, width: 1 });
-    this.audienceText.position.set(76, 10);
-    this.audienceText.text = String(Math.max(0, this.round.online));
+    this.audienceText.position.set(76, 11);
+    this.audienceText.text = String(Math.max(0, this.round.online + this.round.automatedOnline));
   }
 }

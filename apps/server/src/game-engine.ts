@@ -183,6 +183,7 @@ export class GameEngine {
       bets: [...this.bets, ...this.bots.getPublicBets()].sort((a, b) => b.amount - a.amount).slice(0, 120),
       demoBets: this.demo.getPublicBets(),
       online: this.socketUsers.size,
+      automatedOnline: this.bots.getAutomatedParticipantCount(),
       demoOnline: this.demo.getOnlineCount(this.socketUsers.size),
       houseEdgePercent: this.settings.houseEdgePercent,
       lossPool: fromMinor(this.cachedLossPoolMinor),

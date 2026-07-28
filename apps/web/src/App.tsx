@@ -23,6 +23,7 @@ const emptyRound: RoundSnapshot = {
   bets: [],
   demoBets: [],
   online: 0,
+  automatedOnline: 75,
   demoOnline: 75,
   houseEdgePercent: 1,
   lossPool: 0,

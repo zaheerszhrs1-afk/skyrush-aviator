@@ -564,3 +564,164 @@ button { color: inherit; }
 .mode-switch{display:flex;gap:3px;padding:3px;border:1px solid #30343b;border-radius:999px;background:#111316}.mode-switch button{border:0;border-radius:999px;padding:7px 14px;background:transparent;color:#8f959f;font-size:12px;font-weight:800;cursor:pointer}.mode-switch button.active{background:#2b3038;color:#fff}.demo-mode .mode-switch button.active{background:#176da1}.demo-mode-badge,.demo-bot-badge{display:inline-flex;align-items:center;border-radius:999px;background:#123d58;color:#8cd8ff;border:1px solid #235d7c;font-size:9px;font-weight:900;letter-spacing:.08em;padding:3px 6px}.demo-mode-badge{vertical-align:middle;margin-left:6px}.demo-disclosure{margin:7px 10px 0;padding:8px 12px;border:1px solid #174f70;border-radius:10px;background:#0d2634;color:#9edfff;text-align:center;font-size:11px;line-height:1.4}.demo-bet-panel{border-color:#1d5472}.demo-message{color:#80d5ff}.bet-row>span:first-child b{font-weight:500;overflow:hidden;text-overflow:ellipsis}.bet-row>span:first-child{min-width:0}.demo-bot-badge{flex:none;font-size:7px;padding:2px 4px}.profile img{width:100%;height:100%;border-radius:50%;object-fit:cover}.profile-menu small{color:#68bde9;font-size:10px}.top-actions button:disabled{opacity:.55;cursor:not-allowed}
 @media(max-width:900px){.mode-switch{margin-left:auto}.mode-switch button{padding:6px 10px}.top-actions>button{display:none}.demo-disclosure{font-size:10px}}
 @media(max-width:520px){.mode-switch button{padding:5px 8px;font-size:10px}.demo-disclosure{margin:5px 4px 0}.demo-bot-badge{display:none}}
+
+/* Compact responsive bet controls for mobile and tablet. */
+@media (max-width: 900px) {
+  .bet-panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    width: 100%;
+  }
+
+  .bet-panel {
+    min-width: 0;
+    padding: 4px 6px 5px;
+    border-radius: 14px;
+  }
+
+  .segmented {
+    width: min(150px, 74%);
+    height: 27px;
+    margin: 0 auto 3px;
+    padding: 2px;
+  }
+
+  .segmented button {
+    padding: 2px 4px;
+    font-size: 11px;
+  }
+
+  .bet-main-row {
+    grid-template-columns: minmax(92px, .78fr) minmax(0, 1.22fr);
+    gap: 5px;
+  }
+
+  .amount-side {
+    gap: 3px;
+  }
+
+  .stepper {
+    grid-template-columns: 25px minmax(38px, 1fr) 25px;
+    gap: 2px;
+  }
+
+  .stepper button {
+    width: 24px;
+    height: 24px;
+    font-size: 15px;
+  }
+
+  .stepper input {
+    font-size: 13px;
+  }
+
+  .quick-grid {
+    gap: 3px;
+  }
+
+  .quick-grid button {
+    min-height: 21px;
+    padding: 2px 3px;
+    border-radius: 8px;
+    font-size: 10px;
+    line-height: 1;
+  }
+
+  .primary-bet {
+    min-height: 55px;
+    padding: 5px 7px;
+    border-width: 1px;
+    border-radius: 13px;
+    font-size: clamp(13px, 2.2vw, 17px);
+    line-height: 1.15;
+  }
+
+  .auto-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) 52px;
+    gap: 4px;
+    margin-top: 4px;
+    padding-top: 4px;
+    font-size: 9px;
+  }
+
+  .auto-row label {
+    gap: 3px;
+  }
+
+  .auto-value {
+    padding: 3px;
+    border-radius: 8px;
+    font-size: 10px;
+  }
+
+  .panel-message {
+    height: 11px;
+    margin-top: 1px;
+    padding-left: 1px;
+    font-size: 8px;
+    line-height: 11px;
+  }
+}
+
+@media (max-width: 560px) {
+  .bet-panels {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .bet-panel {
+    padding: 3px 5px 4px;
+    border-radius: 12px;
+  }
+
+  .segmented {
+    width: min(138px, 58%);
+    height: 25px;
+    margin-bottom: 2px;
+  }
+
+  .segmented button {
+    font-size: 10px;
+  }
+
+  .bet-main-row {
+    grid-template-columns: minmax(105px, 40%) minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .stepper {
+    grid-template-columns: 24px minmax(42px, 1fr) 24px;
+  }
+
+  .stepper button {
+    width: 23px;
+    height: 23px;
+    font-size: 14px;
+  }
+
+  .stepper input {
+    font-size: 12px;
+  }
+
+  .quick-grid button {
+    min-height: 19px;
+    font-size: 9px;
+  }
+
+  .primary-bet {
+    min-height: 50px;
+    padding: 4px 6px;
+    border-radius: 11px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 360px) {
+  .bet-main-row {
+    grid-template-columns: 102px minmax(0, 1fr);
+  }
+
+  .primary-bet {
+    font-size: 13px;
+  }
+}
