@@ -25,6 +25,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
   const [autoCashOut, setAutoCashOut] = useState(false);
   const [autoAt, setAutoAt] = useState(1.1);
   const [message, setMessage] = useState("");
+  const [actionPending, setActionPending] = useState<"place" | "cashout" | null>(null);
   const autoPlaceRequestRef = useRef<string | null>(null);
   const autoCashoutRequestRef = useRef<string | null>(null);
   const lastAutoPlaceRef = useRef<string | null>(null);
@@ -41,6 +42,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
 
   useEffect(() => {
     setMessage("");
+    setActionPending(null);
     setAutoBet(false);
     setAutoCashOut(false);
     autoPlaceRequestRef.current = null;
@@ -48,6 +50,21 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
     lastAutoPlaceRef.current = null;
     lastAutoCashoutRef.current = null;
   }, [accountMode]);
+
+  useEffect(() => {
+    if (!actionPending) return;
+
+    const walletSynced = actionPending === "place"
+      ? Boolean(activeBet || queuedBet)
+      : !activeBet;
+    if (walletSynced) {
+      setActionPending(null);
+      return;
+    }
+
+    const fallback = window.setTimeout(() => setActionPending(null), 3000);
+    return () => window.clearTimeout(fallback);
+  }, [actionPending, activeBet?.id, queuedBet?.id]);
 
   useEffect(() => {
     if (!autoBet) {
@@ -120,17 +137,34 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
   }, [accountMode, activeBet?.id, amount, autoBet, queuedBet?.id, round.phase, round.roundId, slot]);
 
   const primaryAction = () => {
+    if (actionPending) return;
+
     if (activeBet && round.phase === "RUNNING") {
-      socket.emit("bet:cashout", { slot, mode: accountMode }, (result: BetActionResult) => handleResult(result));
+      setActionPending("cashout");
+      setMessage(`Cash-out requested at ${payableMultiplier.toFixed(2)}x...`);
+      socket.emit("bet:cashout", { slot, mode: accountMode }, (result: BetActionResult) => {
+        if (!result.ok) setActionPending(null);
+        handleResult(result);
+      });
       return;
     }
-    socket.emit("bet:place", { slot, amount, mode: accountMode }, (result: BetActionResult) => handleResult(result));
+
+    setActionPending("place");
+    setMessage("Placing bet...");
+    socket.emit("bet:place", { slot, amount, mode: accountMode }, (result: BetActionResult) => {
+      if (!result.ok) setActionPending(null);
+      handleResult(result);
+    });
   };
 
   const prefix = accountMode === "DEMO" ? "Demo " : "";
-  const buttonTitle = activeBet && round.phase === "RUNNING"
-    ? `${prefix}Cash Out`
-    : queuedBet
+  const buttonTitle = actionPending === "cashout"
+    ? `${prefix}Cashing Out...`
+    : actionPending === "place"
+      ? `${prefix}Placing...`
+      : activeBet && round.phase === "RUNNING"
+        ? `${prefix}Cash Out`
+        : queuedBet
       ? "Accepted"
       : activeBet
         ? `${prefix}Bet placed`
@@ -144,7 +178,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
         ? `${activeBet.amount.toFixed(2)} PKR`
         : `${amount.toFixed(2)} PKR`;
 
-  const controlsLocked = Boolean(acceptedBet);
+  const controlsLocked = Boolean(acceptedBet) || actionPending !== null;
 
   return (
     <section className={`bet-panel ${accountMode === "DEMO" ? "demo-bet-panel" : ""}`}>
@@ -175,7 +209,8 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
         <button
           className={`primary-bet ${activeBet && round.phase === "RUNNING" ? "cashout" : ""} ${acceptedBet ? "accepted" : ""}`}
           onClick={primaryAction}
-          disabled={Boolean(acceptedBet)}
+          disabled={Boolean(acceptedBet) || actionPending !== null}
+          aria-busy={actionPending !== null}
         >
           <span className="primary-bet-label">{buttonTitle}</span>{" "}
           <span className="primary-bet-value">{buttonValue}</span>

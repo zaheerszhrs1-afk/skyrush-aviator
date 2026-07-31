@@ -967,7 +967,7 @@ io.on("connection", async (socket) => {
   socket.on("bet:place", async (payload: { slot?: BetSlot; amount?: number; mode?: AccountMode }, acknowledge?: (result: unknown) => void) => {
     const slot = payload?.slot === "right" ? "right" : "left";
     const mode: AccountMode = payload?.mode === "DEMO" ? "DEMO" : "REAL";
-    acknowledge?.(await engine.placeBet(authUser.id, slot, Number(payload?.amount), mode));
+    acknowledge?.(await engine.placeBet(authUser.id, slot, Number(payload?.amount), mode, authUser.name));
   });
 
   socket.on("bet:cashout", async (payload: { slot?: BetSlot; mode?: AccountMode }, acknowledge?: (result: unknown) => void) => {
