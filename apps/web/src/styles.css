@@ -685,17 +685,25 @@ button { color: inherit; }
     position: relative;
     width: 100%;
     height: auto;
-    min-height: 107px;
-    padding: 38px 8px 6px;
+    min-height: 108px;
+    padding: 5px 8px 6px;
     overflow: hidden;
     border-color: #24272c;
     border-radius: 16px;
     background: #1b1d20;
   }
 
-  /* The supplied mobile reference uses the compact bet card without tabs. */
   .bet-panel > .segmented {
-    display: none;
+    display: grid;
+    width: min(170px, 68%);
+    height: 30px;
+    margin: 0 auto 5px;
+    padding: 2px;
+  }
+
+  .bet-panel > .segmented button {
+    padding: 3px 6px;
+    font-size: 12px;
   }
 
   .bet-main-row {
@@ -768,6 +776,24 @@ button { color: inherit; }
     min-height: 11px;
     margin-top: 4px;
     white-space: normal;
+  }
+
+  .auto-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) 58px;
+    gap: 5px;
+    margin-top: 6px;
+    padding-top: 6px;
+    font-size: 10px;
+  }
+
+  .auto-row label {
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .auto-value {
+    min-height: 28px;
+    font-size: 11px;
   }
 }
 

@@ -149,7 +149,7 @@ export class DemoEngine {
     userBets[input.slot] = bet;
     this.activeBets.set(input.userId, userBets);
     this.publicBets.push(bet);
-    return { ok: true, message: "Demo bet placed using virtual funds." };
+    return { ok: true, message: "Demo bet placed successfully." };
   }
 
   async cashOut(input: {

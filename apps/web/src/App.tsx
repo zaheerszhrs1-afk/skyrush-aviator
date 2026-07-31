@@ -209,7 +209,7 @@ export default function App() {
       <div className="game-title-row">
         <div className="game-name">B9T9 {accountMode === "DEMO" && <span className="demo-mode-badge">DEMO</span>}</div>
         <div className="balance">
-          <span className={`connection ${connected ? "ok" : ""}`}>{statusLabel}</span>
+          {accountMode === "REAL" && <span className={`connection ${connected ? "ok" : ""}`}>{statusLabel}</span>}
           <strong>{visibleBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> PKR
           {accountMode === "REAL" && (wallet.lockedBalance > 0 || wallet.bettingLockedBalance > 0) && <span className="locked-balance">Locked {(wallet.lockedBalance + wallet.bettingLockedBalance).toLocaleString()} PKR</span>}
           {accountMode === "REAL" && <button className="toolbar-button" aria-label="Wallet" onClick={() => setFinanceOpen(true)}>☰</button>}
