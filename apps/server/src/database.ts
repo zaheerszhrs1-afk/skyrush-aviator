@@ -3,6 +3,7 @@ import {
   DepositRequestModel,
   GameBetModel,
   GameRoundModel,
+  PlatformAuditModel,
   PlatformSettingsModel,
   PlatformStateModel,
   UserModel,
@@ -24,13 +25,16 @@ async function migrateMinorUnitFields(): Promise<void> {
       { bettingLockedMinor: { $exists: false } },
       { pendingRewardsMinor: { $exists: false } },
       { wagerRequirementMinor: { $exists: false } },
+      { wagerTargetMinor: { $exists: false } },
+      { wagerCompletedMinor: { $exists: false } },
+      { wagerTrackingVersion: { $exists: false } },
       { demoBalanceMinor: { $exists: false } },
       { authProvider: { $exists: false } },
       { vipLevel: { $exists: false } },
       { vipLifetimeDepositMinor: { $exists: false } },
       { vipLifetimeValidBetMinor: { $exists: false } }
     ]
-  }).select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor wagerRequirementMinor demoBalanceMinor authProvider role vipLevel vipLifetimeDepositMinor vipLifetimeValidBetMinor").lean();
+  }).select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor wagerRequirementMinor wagerTargetMinor wagerCompletedMinor wagerTrackingVersion demoBalanceMinor authProvider role vipLevel vipLifetimeDepositMinor vipLifetimeValidBetMinor").lean();
 
   if (users.length > 0) {
     await UserModel.bulkWrite(users.map((user: any) => ({
@@ -45,6 +49,11 @@ async function migrateMinorUnitFields(): Promise<void> {
             bettingLockedMinor: Number.isSafeInteger(Number(user.bettingLockedMinor)) ? Number(user.bettingLockedMinor) : 0,
             pendingRewardsMinor: Number.isSafeInteger(Number(user.pendingRewardsMinor)) ? Number(user.pendingRewardsMinor) : 0,
             wagerRequirementMinor: Number.isSafeInteger(Number(user.wagerRequirementMinor)) ? Number(user.wagerRequirementMinor) : 0,
+            wagerTargetMinor: Number.isSafeInteger(Number(user.wagerTargetMinor))
+              ? Number(user.wagerTargetMinor)
+              : (Number.isSafeInteger(Number(user.wagerRequirementMinor)) ? Number(user.wagerRequirementMinor) : 0),
+            wagerCompletedMinor: Number.isSafeInteger(Number(user.wagerCompletedMinor)) ? Number(user.wagerCompletedMinor) : 0,
+            wagerTrackingVersion: Number.isFinite(Number(user.wagerTrackingVersion)) ? Number(user.wagerTrackingVersion) : 0,
             demoBalanceMinor: Number.isSafeInteger(Number(user.demoBalanceMinor))
               ? Number(user.demoBalanceMinor)
               : user.role === "ADMIN"
@@ -137,6 +146,159 @@ async function migrateMinorUnitFields(): Promise<void> {
   }
 }
 
+
+
+async function migrateWagerTracking(): Promise<void> {
+  const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
+  const defaultPercent = Math.min(100, Math.max(0, Number((settings as any)?.wageringRequirementPercent ?? 30)));
+  const users = await UserModel.find({
+    role: "USER",
+    $or: [
+      { wagerTrackingVersion: { $exists: false } },
+      { wagerTrackingVersion: { $lt: 2 } }
+    ]
+  }).select("balance balanceMinor pendingRewardsMinor wagerRequirementMinor wagerTargetMinor wagerCompletedMinor").lean();
+
+  for (const user of users as any[]) {
+    const [deposits, bets, depositAudits] = await Promise.all([
+      DepositRequestModel.find({ userId: user._id, status: "APPROVED" })
+        .select("amount amountMinor reviewedAt updatedAt createdAt wageringPercentApplied wagerRequirementMinor")
+        .lean(),
+      GameBetModel.find({ userId: user._id, status: { $in: ["CASHED_OUT", "LOST"] } })
+        .select("amount amountMinor payout payoutMinor status settledAt updatedAt createdAt")
+        .lean(),
+      PlatformAuditModel.find({ userId: user._id, type: "DEPOSIT_APPROVED" })
+        .select("referenceId metadata")
+        .lean()
+    ]);
+
+    if (deposits.length === 0) {
+      const remaining = Number.isSafeInteger(Number(user.wagerRequirementMinor))
+        ? Math.max(0, Number(user.wagerRequirementMinor))
+        : 0;
+      const target = Number.isSafeInteger(Number(user.wagerTargetMinor))
+        ? Math.max(remaining, Number(user.wagerTargetMinor))
+        : remaining;
+      const completed = Number.isSafeInteger(Number(user.wagerCompletedMinor))
+        ? Math.min(target, Math.max(0, Number(user.wagerCompletedMinor)))
+        : Math.max(0, target - remaining);
+      await UserModel.updateOne(
+        { _id: user._id },
+        { $set: { wagerRequirementMinor: remaining, wagerTargetMinor: target, wagerCompletedMinor: completed, wagerTrackingVersion: 2 } }
+      );
+      continue;
+    }
+
+    type WagerEvent =
+      | { kind: "DEPOSIT"; at: number; requirementMinor: number }
+      | { kind: "BET"; at: number; amountMinor: number; netProfitMinor: number };
+    const events: WagerEvent[] = [];
+    const depositAuditById = new Map<string, any>(
+      (depositAudits as any[]).map((audit) => [String(audit.referenceId ?? ""), audit])
+    );
+
+    for (const deposit of deposits as any[]) {
+      const amountMinor = Number.isSafeInteger(Number(deposit.amountMinor))
+        ? Math.max(0, Number(deposit.amountMinor))
+        : safeMinor(deposit.amount);
+      const auditMetadata = depositAuditById.get(String(deposit._id))?.metadata ?? {};
+      const appliedPercent = Number.isFinite(Number(deposit.wageringPercentApplied))
+        ? Math.min(100, Math.max(0, Number(deposit.wageringPercentApplied)))
+        : Number.isFinite(Number(auditMetadata.wageringPercent))
+          ? Math.min(100, Math.max(0, Number(auditMetadata.wageringPercent)))
+          : defaultPercent;
+      const requirementMinor = Number.isSafeInteger(Number(deposit.wagerRequirementMinor))
+        ? Math.max(0, Number(deposit.wagerRequirementMinor))
+        : Number.isSafeInteger(Number(auditMetadata.wagerRequirementMinor))
+          ? Math.max(0, Number(auditMetadata.wagerRequirementMinor))
+          : Math.round(amountMinor * (appliedPercent / 100));
+      const at = new Date(deposit.reviewedAt ?? deposit.updatedAt ?? deposit.createdAt ?? 0).getTime();
+      events.push({ kind: "DEPOSIT", at, requirementMinor });
+
+      if (!Number.isSafeInteger(Number(deposit.wagerRequirementMinor)) || !Number.isFinite(Number(deposit.wageringPercentApplied))) {
+        await DepositRequestModel.updateOne(
+          { _id: deposit._id },
+          { $set: { wagerRequirementMinor: requirementMinor, wageringPercentApplied: appliedPercent } }
+        );
+      }
+    }
+
+    for (const bet of bets as any[]) {
+      const amountMinor = Number.isSafeInteger(Number(bet.amountMinor))
+        ? Math.max(0, Number(bet.amountMinor))
+        : safeMinor(bet.amount);
+      const payoutMinor = Number.isSafeInteger(Number(bet.payoutMinor))
+        ? Math.max(0, Number(bet.payoutMinor))
+        : safeMinor(bet.payout);
+      const at = new Date(bet.settledAt ?? bet.updatedAt ?? bet.createdAt ?? 0).getTime();
+      events.push({
+        kind: "BET",
+        at,
+        amountMinor,
+        netProfitMinor: bet.status === "CASHED_OUT" ? Math.max(0, payoutMinor - amountMinor) : 0
+      });
+    }
+
+    events.sort((left, right) => {
+      const timestampDifference = left.at - right.at;
+      if (timestampDifference !== 0) return timestampDifference;
+      if (left.kind === right.kind) return 0;
+      return left.kind === "DEPOSIT" ? -1 : 1;
+    });
+
+    let targetMinor = 0;
+    let completedMinor = 0;
+    let remainingMinor = 0;
+    let pendingRewardsMinor = 0;
+
+    for (const event of events) {
+      if (event.kind === "DEPOSIT") {
+        if (event.requirementMinor <= 0) continue;
+        if (remainingMinor <= 0) {
+          targetMinor = event.requirementMinor;
+          completedMinor = 0;
+          remainingMinor = event.requirementMinor;
+          pendingRewardsMinor = 0;
+        } else {
+          targetMinor += event.requirementMinor;
+          remainingMinor += event.requirementMinor;
+        }
+        continue;
+      }
+
+      if (remainingMinor <= 0 || event.amountMinor <= 0) continue;
+      const contributionMinor = Math.min(remainingMinor, event.amountMinor);
+      remainingMinor -= contributionMinor;
+      completedMinor = Math.min(targetMinor, completedMinor + contributionMinor);
+      if (event.netProfitMinor > 0 && remainingMinor > 0) pendingRewardsMinor += event.netProfitMinor;
+      if (remainingMinor === 0) {
+        completedMinor = targetMinor;
+        pendingRewardsMinor = 0;
+      }
+    }
+
+    const availableMinor = Number.isSafeInteger(Number(user.balanceMinor)) ? Number(user.balanceMinor) : safeMinor(user.balance);
+    const currentPendingMinor = Number.isSafeInteger(Number(user.pendingRewardsMinor)) ? Math.max(0, Number(user.pendingRewardsMinor)) : 0;
+    const availableAndPendingMinor = Math.max(0, availableMinor + currentPendingMinor);
+    const correctedPendingMinor = Math.min(pendingRewardsMinor, availableAndPendingMinor);
+    const correctedAvailableMinor = availableAndPendingMinor - correctedPendingMinor;
+
+    await UserModel.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          balanceMinor: correctedAvailableMinor,
+          balance: correctedAvailableMinor / 100,
+          pendingRewardsMinor: correctedPendingMinor,
+          wagerRequirementMinor: remainingMinor,
+          wagerTargetMinor: targetMinor,
+          wagerCompletedMinor: completedMinor,
+          wagerTrackingVersion: 2
+        }
+      }
+    );
+  }
+}
 
 async function migrateFinanceSettings(): Promise<void> {
   await Promise.all([
@@ -249,6 +411,7 @@ export async function connectDatabase(): Promise<void> {
   await migrateSettingsVersion();
   await migrateFinanceSettings();
   await migrateMinorUnitFields();
+  await migrateWagerTracking();
   await releaseStaleQueuedBetKeys();
   console.log(`MongoDB connected: ${mongoose.connection.name}`);
 }

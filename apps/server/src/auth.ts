@@ -19,6 +19,8 @@ export interface AuthUser {
   bettingLockedBalance: number;
   pendingRewards: number;
   wagerRequirementRemaining: number;
+  wagerRequirementTarget: number;
+  wagerRequirementCompleted: number;
   totalBalance: number;
   demoBalance: number;
   authProvider: AuthProvider;
@@ -72,6 +74,12 @@ export function publicUser(document: any): AuthUser {
   const wagerRequirementMinor = Number.isSafeInteger(Number(document?.wagerRequirementMinor))
     ? Number(document.wagerRequirementMinor)
     : 0;
+  const wagerTargetMinor = Number.isSafeInteger(Number(document?.wagerTargetMinor))
+    ? Math.max(wagerRequirementMinor, Number(document.wagerTargetMinor))
+    : wagerRequirementMinor;
+  const wagerCompletedMinor = Number.isSafeInteger(Number(document?.wagerCompletedMinor))
+    ? Math.min(wagerTargetMinor, Math.max(0, Number(document.wagerCompletedMinor)))
+    : Math.max(0, wagerTargetMinor - wagerRequirementMinor);
   const demoBalanceMinor = Number.isSafeInteger(Number(document?.demoBalanceMinor))
     ? Number(document.demoBalanceMinor)
     : 0;
@@ -87,6 +95,8 @@ export function publicUser(document: any): AuthUser {
     bettingLockedBalance: fromMinor(bettingLockedMinor),
     pendingRewards: fromMinor(pendingRewardsMinor),
     wagerRequirementRemaining: fromMinor(wagerRequirementMinor),
+    wagerRequirementTarget: fromMinor(wagerTargetMinor),
+    wagerRequirementCompleted: fromMinor(wagerCompletedMinor),
     totalBalance: fromMinor(balanceMinor + withdrawalLockedMinor + bettingLockedMinor + pendingRewardsMinor),
     demoBalance: fromMinor(demoBalanceMinor),
     authProvider: (document.authProvider ?? "PASSWORD") as AuthProvider,

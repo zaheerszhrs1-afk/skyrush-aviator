@@ -21,6 +21,15 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh }: FinanceModalP
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [financeSettings, setFinanceSettings] = useState({ minDeposit: 100, minWithdrawal: 500, wageringRequirementPercent: 30, depositsEnabled: true, withdrawalsEnabled: true });
 
+  const wagerTarget = Math.max(0, Number(wallet.wagerRequirementTarget ?? 0));
+  const wagerRemaining = Math.max(0, Number(wallet.wagerRequirementRemaining ?? 0));
+  const wagerCompleted = Math.min(
+    wagerTarget,
+    Math.max(0, Number(wallet.wagerRequirementCompleted ?? Math.max(0, wagerTarget - wagerRemaining)))
+  );
+  const wagerProgress = wagerTarget > 0 ? Math.min(100, (wagerCompleted / wagerTarget) * 100) : 0;
+  const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
   const loadHistory = async () => {
     const [transactionResult, depositResult, withdrawalResult] = await Promise.all([
       apiRequest<{ transactions: WalletTransaction[] }>("/api/wallet/transactions"),
@@ -40,6 +49,14 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh }: FinanceModalP
 
   useEffect(() => {
     if (tab === "HISTORY") void loadHistory().catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load history."));
+  }, [tab]);
+
+  useEffect(() => {
+    void refreshWallet().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (tab === "WITHDRAW") void refreshWallet().catch(() => undefined);
   }, [tab]);
 
   const refreshWallet = async () => {
@@ -90,7 +107,7 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh }: FinanceModalP
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="finance-modal" role="dialog" aria-modal="true">
         <header>
-          <div><strong>Wallet</strong><span>Available {wallet.balance.toLocaleString()} PKR · Locked winnings {wallet.pendingRewards.toLocaleString()} PKR · Wager remaining {wallet.wagerRequirementRemaining.toLocaleString()} PKR</span></div>
+          <div><strong>Wallet</strong><span>Available {formatMoney(wallet.balance)} PKR · Total {formatMoney(wallet.totalBalance)} PKR</span></div>
           <button onClick={onClose}>×</button>
         </header>
         <nav>
@@ -111,6 +128,27 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh }: FinanceModalP
 
         {tab === "WITHDRAW" && (
           <form className="finance-form" onSubmit={submitWithdrawal}>
+            <section className={`wager-progress-card ${wagerTarget > 0 && wagerRemaining === 0 ? "complete" : ""}`}>
+              <div className="wager-progress-heading">
+                <span>Current valid bet</span>
+                <strong>{wagerTarget > 0 ? `${formatMoney(wagerCompleted)} / ${formatMoney(wagerTarget)}` : "No active requirement"}</strong>
+              </div>
+              <div className="wager-progress-track" role="progressbar" aria-label="Deposit wagering progress" aria-valuemin={0} aria-valuemax={wagerTarget || 1} aria-valuenow={wagerCompleted}>
+                <span style={{ width: `${wagerProgress}%` }} />
+                {wagerTarget > 0 && <b>{formatMoney(wagerCompleted)} / {formatMoney(wagerTarget)}</b>}
+              </div>
+              <div className="wager-progress-meta">
+                <span>Locked winnings <b>{formatMoney(wallet.pendingRewards)} PKR</b></span>
+                <span>Remaining <b>{formatMoney(wagerRemaining)} PKR</b></span>
+              </div>
+              <small>
+                {wagerTarget <= 0
+                  ? "An approved deposit will start the wagering progress."
+                  : wagerRemaining <= 0
+                    ? "Wagering completed. All settled winnings are available for withdrawal."
+                    : `Complete ${formatMoney(wagerRemaining)} PKR more in settled real bets to unlock winnings.`}
+              </small>
+            </section>
             <label>Amount (PKR)<input type="number" min={financeSettings.minWithdrawal} max={wallet.balance} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
             <label>Withdrawal method<select value={method} onChange={(event) => setMethod(event.target.value)}><option>Bank Transfer</option><option>JazzCash</option><option>EasyPaisa</option><option>USDT Manual</option></select></label>
             <label>Account details<textarea value={details} onChange={(event) => setDetails(event.target.value)} required rows={4} /></label>

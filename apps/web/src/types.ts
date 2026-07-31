@@ -69,6 +69,8 @@ export interface WalletSnapshot {
   bettingLockedBalance: number;
   pendingRewards: number;
   wagerRequirementRemaining: number;
+  wagerRequirementTarget: number;
+  wagerRequirementCompleted: number;
   totalBalance: number;
   activeBets: Partial<Record<BetSlot, PublicBet>>;
   queuedBets: Partial<Record<BetSlot, PublicBet>>;
@@ -89,6 +91,8 @@ export interface AuthUser {
   bettingLockedBalance: number;
   pendingRewards: number;
   wagerRequirementRemaining: number;
+  wagerRequirementTarget: number;
+  wagerRequirementCompleted: number;
   totalBalance: number;
   demoBalance: number;
 }

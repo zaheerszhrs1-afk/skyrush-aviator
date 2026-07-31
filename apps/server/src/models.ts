@@ -50,6 +50,9 @@ const userSchema = new Schema(
     bettingLockedMinor: { type: Number, default: 0, min: 0 },
     pendingRewardsMinor: { type: Number, default: 0, min: 0 },
     wagerRequirementMinor: { type: Number, default: 0, min: 0 },
+    wagerTargetMinor: { type: Number, default: 0, min: 0 },
+    wagerCompletedMinor: { type: Number, default: 0, min: 0 },
+    wagerTrackingVersion: { type: Number, default: 0, min: 0 },
     demoBalanceMinor: { type: Number, default: 10_000_000, min: 0 },
     vipLevel: { type: Number, default: 0, min: 0, max: 12, index: true },
     vipLifetimeDepositMinor: { type: Number, default: 0, min: 0 },
@@ -134,7 +137,9 @@ const depositRequestSchema = new Schema(
     status: { type: String, enum: ["PENDING", "APPROVED", "REJECTED"], default: "PENDING", index: true },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User" },
     reviewedAt: { type: Date },
-    reviewNote: { type: String, default: "", maxlength: 500 }
+    reviewNote: { type: String, default: "", maxlength: 500 },
+    wageringPercentApplied: { type: Number, min: 0, max: 100 },
+    wagerRequirementMinor: { type: Number, min: 0 }
   },
   { timestamps: true, versionKey: false }
 );
@@ -156,7 +161,9 @@ const withdrawalRequestSchema = new Schema(
     },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User" },
     reviewedAt: { type: Date },
-    reviewNote: { type: String, default: "", maxlength: 500 }
+    reviewNote: { type: String, default: "", maxlength: 500 },
+    wageringPercentApplied: { type: Number, min: 0, max: 100 },
+    wagerRequirementMinor: { type: Number, min: 0 }
   },
   { timestamps: true, versionKey: false }
 );

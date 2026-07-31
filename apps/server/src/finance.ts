@@ -17,8 +17,22 @@ function walletFields(user: any) {
   const withdrawalLockedMinor = minorFromDocument(user, "withdrawalLockedMinor", "lockedBalance");
   const bettingLockedMinor = Number.isSafeInteger(Number(user?.bettingLockedMinor)) ? Number(user.bettingLockedMinor) : 0;
   const pendingRewardsMinor = Number.isSafeInteger(Number(user?.pendingRewardsMinor)) ? Number(user.pendingRewardsMinor) : 0;
-  const wagerRequirementMinor = Number.isSafeInteger(Number(user?.wagerRequirementMinor)) ? Number(user.wagerRequirementMinor) : 0;
-  return { balanceMinor, withdrawalLockedMinor, bettingLockedMinor, pendingRewardsMinor, wagerRequirementMinor };
+  const wagerRequirementMinor = Number.isSafeInteger(Number(user?.wagerRequirementMinor)) ? Math.max(0, Number(user.wagerRequirementMinor)) : 0;
+  const wagerTargetMinor = Number.isSafeInteger(Number(user?.wagerTargetMinor))
+    ? Math.max(wagerRequirementMinor, Number(user.wagerTargetMinor))
+    : wagerRequirementMinor;
+  const wagerCompletedMinor = Number.isSafeInteger(Number(user?.wagerCompletedMinor))
+    ? Math.min(wagerTargetMinor, Math.max(0, Number(user.wagerCompletedMinor)))
+    : Math.max(0, wagerTargetMinor - wagerRequirementMinor);
+  return {
+    balanceMinor,
+    withdrawalLockedMinor,
+    bettingLockedMinor,
+    pendingRewardsMinor,
+    wagerRequirementMinor,
+    wagerTargetMinor,
+    wagerCompletedMinor
+  };
 }
 
 type WalletTransactionInputDocument = {
@@ -95,10 +109,12 @@ export async function getWalletSnapshot(userId: string): Promise<{
   bettingLockedBalance: number;
   pendingRewards: number;
   wagerRequirementRemaining: number;
+  wagerRequirementTarget: number;
+  wagerRequirementCompleted: number;
   totalBalance: number;
 }> {
   const user = await UserModel.findById(userId)
-    .select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor wagerRequirementMinor")
+    .select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor wagerRequirementMinor wagerTargetMinor wagerCompletedMinor")
     .lean();
   if (!user) throw new Error("User not found.");
   const wallet = walletFields(user);
@@ -108,6 +124,8 @@ export async function getWalletSnapshot(userId: string): Promise<{
     bettingLockedBalance: fromMinor(wallet.bettingLockedMinor),
     pendingRewards: fromMinor(wallet.pendingRewardsMinor),
     wagerRequirementRemaining: fromMinor(wallet.wagerRequirementMinor),
+    wagerRequirementTarget: fromMinor(wallet.wagerTargetMinor),
+    wagerRequirementCompleted: fromMinor(wallet.wagerCompletedMinor),
     totalBalance: fromMinor(
       wallet.balanceMinor + wallet.withdrawalLockedMinor + wallet.bettingLockedMinor + wallet.pendingRewardsMinor
     )
@@ -227,25 +245,29 @@ export async function reviewDeposit(input: {
     const wageringPercent = Math.min(100, Math.max(0, Number(settings?.wageringRequirementPercent ?? 30)));
     const wagerRequirementMinor = Math.round(amountMinor * (wageringPercent / 100));
 
-    const user = await UserModel.findByIdAndUpdate(
-      deposit.userId,
-      {
-        $inc: {
-          balanceMinor: amountMinor,
-          balance: fromMinor(amountMinor),
-          wagerRequirementMinor,
-          vipLifetimeDepositMinor: amountMinor
-        }
-      },
-      { new: true, session }
-    );
+    const user = await UserModel.findById(deposit.userId).session(session);
     if (!user) throw new Error("Deposit user no longer exists.");
+
+    const wallet = walletFields(user);
+    const startsNewWagerCycle = wallet.wagerRequirementMinor <= 0;
+    (user as any).balanceMinor = wallet.balanceMinor + amountMinor;
+    (user as any).balance = fromMinor((user as any).balanceMinor);
+    (user as any).vipLifetimeDepositMinor = Number((user as any).vipLifetimeDepositMinor ?? 0) + amountMinor;
+    (user as any).wagerRequirementMinor = wallet.wagerRequirementMinor + wagerRequirementMinor;
+    (user as any).wagerTargetMinor = startsNewWagerCycle
+      ? wagerRequirementMinor
+      : wallet.wagerTargetMinor + wagerRequirementMinor;
+    (user as any).wagerCompletedMinor = startsNewWagerCycle ? 0 : wallet.wagerCompletedMinor;
+    (user as any).wagerTrackingVersion = 2;
+    await user.save({ session });
 
     deposit.status = "APPROVED";
     deposit.reviewedBy = new mongoose.Types.ObjectId(input.adminId);
     deposit.reviewedAt = new Date();
     deposit.reviewNote = input.note?.trim() ?? "";
     (deposit as any).amountMinor = amountMinor;
+    (deposit as any).wageringPercentApplied = wageringPercent;
+    (deposit as any).wagerRequirementMinor = wagerRequirementMinor;
     await deposit.save({ session });
 
     const state = await PlatformStateModel.findOneAndUpdate(

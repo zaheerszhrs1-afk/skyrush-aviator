@@ -120,19 +120,34 @@ function walletTransaction(input: {
 function wageringState(user: any, stakeMinor: number): {
   requirementBeforeMinor: number;
   requirementAfterMinor: number;
+  targetMinor: number;
+  completedBeforeMinor: number;
+  completedAfterMinor: number;
   contributionMinor: number;
   pendingRewardsBeforeMinor: number;
 } {
   const requirementBeforeMinor = Number.isSafeInteger(Number(user?.wagerRequirementMinor))
     ? Math.max(0, Number(user.wagerRequirementMinor))
     : 0;
+  const targetMinor = Number.isSafeInteger(Number(user?.wagerTargetMinor))
+    ? Math.max(requirementBeforeMinor, Number(user.wagerTargetMinor))
+    : requirementBeforeMinor;
+  const completedBeforeMinor = Number.isSafeInteger(Number(user?.wagerCompletedMinor))
+    ? Math.min(targetMinor, Math.max(0, Number(user.wagerCompletedMinor)))
+    : Math.max(0, targetMinor - requirementBeforeMinor);
   const pendingRewardsBeforeMinor = Number.isSafeInteger(Number(user?.pendingRewardsMinor))
     ? Math.max(0, Number(user.pendingRewardsMinor))
     : 0;
   const contributionMinor = Math.min(requirementBeforeMinor, Math.max(0, stakeMinor));
+  const requirementAfterMinor = requirementBeforeMinor - contributionMinor;
   return {
     requirementBeforeMinor,
-    requirementAfterMinor: requirementBeforeMinor - contributionMinor,
+    requirementAfterMinor,
+    targetMinor,
+    completedBeforeMinor,
+    completedAfterMinor: requirementAfterMinor === 0
+      ? targetMinor
+      : Math.min(targetMinor, completedBeforeMinor + contributionMinor),
     contributionMinor,
     pendingRewardsBeforeMinor
   };
@@ -560,6 +575,9 @@ export class GameEngine {
         (updatedUser as any).pendingRewardsMinor =
           wager.pendingRewardsBeforeMinor + lockedCurrentProfitMinor - releasedPendingMinor;
         (updatedUser as any).wagerRequirementMinor = wager.requirementAfterMinor;
+        (updatedUser as any).wagerTargetMinor = wager.targetMinor;
+        (updatedUser as any).wagerCompletedMinor = wager.completedAfterMinor;
+        (updatedUser as any).wagerTrackingVersion = 2;
         await updatedUser.save({ session });
 
         (dbBet as any).wagerContributionMinor = wager.contributionMinor;
@@ -600,6 +618,8 @@ export class GameEngine {
             wagerContributionMinor: wager.contributionMinor,
             wagerRequirementBeforeMinor: wager.requirementBeforeMinor,
             wagerRequirementAfterMinor: wager.requirementAfterMinor,
+            wagerTargetMinor: wager.targetMinor,
+            wagerCompletedAfterMinor: wager.completedAfterMinor,
             lockedCurrentProfitMinor
           }
         })];
@@ -1063,6 +1083,9 @@ export class GameEngine {
 
       (updatedUser as any).bettingLockedMinor = bettingLockedBeforeMinor - amountMinor;
       (updatedUser as any).wagerRequirementMinor = wager.requirementAfterMinor;
+      (updatedUser as any).wagerTargetMinor = wager.targetMinor;
+      (updatedUser as any).wagerCompletedMinor = wager.completedAfterMinor;
+      (updatedUser as any).wagerTrackingVersion = 2;
       if (releasedPendingMinor > 0) {
         (updatedUser as any).pendingRewardsMinor = 0;
         (updatedUser as any).balanceMinor = availableBeforeMinor + releasedPendingMinor;
@@ -1110,7 +1133,9 @@ export class GameEngine {
           amountMinor,
           wagerContributionMinor: wager.contributionMinor,
           wagerRequirementBeforeMinor: wager.requirementBeforeMinor,
-          wagerRequirementAfterMinor: wager.requirementAfterMinor
+          wagerRequirementAfterMinor: wager.requirementAfterMinor,
+          wagerTargetMinor: wager.targetMinor,
+          wagerCompletedAfterMinor: wager.completedAfterMinor
         }
       })];
 
