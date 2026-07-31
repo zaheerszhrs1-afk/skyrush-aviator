@@ -138,7 +138,7 @@ export class DemoEngine {
             amount: fromMinor(amountMinor),
             status: "ACTIVE"
           }],
-          { session }
+          { session, ordered: true }
         );
       });
     } catch (error) {

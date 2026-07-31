@@ -378,7 +378,7 @@ export class GameEngine {
             amount: fromMinor(amountMinor),
             status: queueForNextRound ? "QUEUED" : "ACTIVE"
           }],
-          { session }
+          { session, ordered: true }
         );
 
         if (!queueForNextRound) {
@@ -414,7 +414,7 @@ export class GameEngine {
               guaranteedMaxMultiplier: this.settings.maxCashoutMultiplier
             }
           })],
-          { session }
+          { session, ordered: true }
         );
 
         await PlatformAuditModel.create(
@@ -434,7 +434,7 @@ export class GameEngine {
               ? `Accepted ${fromMinor(amountMinor).toFixed(2)} PKR bet for the next round; payout liquidity will be reserved when the round opens`
               : `Locked ${fromMinor(amountMinor).toFixed(2)} PKR stake and reserved ${fromMinor(reservedLiabilityMinor).toFixed(2)} PKR winner liquidity`
           }],
-          { session }
+          { session, ordered: true }
         );
       });
 
@@ -618,7 +618,7 @@ export class GameEngine {
           }));
         }
 
-        await WalletTransactionModel.create(walletEntries, { session });
+        await WalletTransactionModel.create(walletEntries, { session, ordered: true });
 
         await PlatformAuditModel.create(
           [
@@ -653,7 +653,7 @@ export class GameEngine {
               description: `Credited ${fromMinor(payout.commissionMinor).toFixed(2)} PKR platform commission`
             }
           ],
-          { session }
+          { session, ordered: true }
         );
       });
 
@@ -881,7 +881,7 @@ export class GameEngine {
               commissionWalletAfterMinor: Number(stateAfter.commissionWalletMinor),
               description: `Activated queued bet and reserved ${fromMinor(reservedLiabilityMinor).toFixed(2)} PKR payout liquidity`
             }],
-            { session }
+            { session, ordered: true }
           );
         });
       } catch (error) {
@@ -977,7 +977,7 @@ export class GameEngine {
           description: `Queued bet refunded: ${reason}`,
           metadata: { queuedForNextRound: true, reason }
         })],
-        { session }
+        { session, ordered: true }
       );
 
       await PlatformAuditModel.create(
@@ -994,7 +994,7 @@ export class GameEngine {
           commissionWalletAfterMinor: Number(stateAfter.commissionWalletMinor),
           description: `Refunded queued bet of ${fromMinor(amountMinor).toFixed(2)} PKR because it could not be activated`
         }],
-        { session }
+        { session, ordered: true }
       );
     });
 
@@ -1128,7 +1128,7 @@ export class GameEngine {
         }));
       }
 
-      await WalletTransactionModel.create(walletEntries, { session });
+      await WalletTransactionModel.create(walletEntries, { session, ordered: true });
 
       await PlatformAuditModel.create(
         [{
@@ -1146,7 +1146,7 @@ export class GameEngine {
           commissionWalletAfterMinor: Number(stateAfter.commissionWalletMinor),
           description: `Moved ${fromMinor(amountMinor).toFixed(2)} PKR losing stake into the shared loss pool`
         }],
-        { session }
+        { session, ordered: true }
       );
     });
 
@@ -1216,7 +1216,7 @@ export class GameEngine {
             referenceId: bet.betId,
             description: "Bet refunded after interrupted server round"
           })],
-          { session }
+          { session, ordered: true }
         );
 
         await PlatformAuditModel.create(
@@ -1234,7 +1234,7 @@ export class GameEngine {
             commissionWalletAfterMinor: Number((stateAfter as any).commissionWalletMinor),
             description: `Refunded interrupted bet stake of ${fromMinor(amountMinor).toFixed(2)} PKR`
           }],
-          { session }
+          { session, ordered: true }
         );
       });
     }

@@ -176,7 +176,7 @@ export async function createWithdrawalRequest(input: {
         method: input.method.trim(),
         accountDetails: input.accountDetails.trim()
       }],
-      { session }
+      { session, ordered: true }
     );
     created = withdrawal;
 
@@ -192,7 +192,7 @@ export async function createWithdrawalRequest(input: {
         referenceId: String(withdrawal._id),
         description: "Withdrawal amount moved to the withdrawal lock"
       })],
-      { session }
+      { session, ordered: true }
     );
   });
 
@@ -272,7 +272,7 @@ export async function reviewDeposit(input: {
         description: `Deposit approved via ${deposit.method}; wagering requirement ${fromMinor(wagerRequirementMinor).toFixed(2)} PKR`,
         metadata: { wageringPercent, wagerRequirementMinor }
       })],
-      { session }
+      { session, ordered: true }
     );
 
     await PlatformAuditModel.create(
@@ -289,7 +289,7 @@ export async function reviewDeposit(input: {
         description: `Approved deposit of ${fromMinor(amountMinor).toFixed(2)} PKR with ${wageringPercent.toFixed(2)}% wagering requirement`,
         metadata: { wageringPercent, wagerRequirementMinor }
       }],
-      { session }
+      { session, ordered: true }
     );
   });
 
@@ -356,7 +356,7 @@ export async function reviewWithdrawal(input: {
           referenceId: String(withdrawal._id),
           description: "Rejected withdrawal restored to available balance"
         })],
-        { session }
+        { session, ordered: true }
       );
       return;
     }
@@ -403,7 +403,7 @@ export async function reviewWithdrawal(input: {
         referenceId: String(withdrawal._id),
         description: `Withdrawal completed via ${withdrawal.method}`
       })],
-      { session }
+      { session, ordered: true }
     );
 
     await PlatformAuditModel.create(
@@ -419,7 +419,7 @@ export async function reviewWithdrawal(input: {
         commissionWalletAfterMinor: Number((state as any).commissionWalletMinor ?? 0),
         description: `Completed withdrawal of ${fromMinor(amountMinor).toFixed(2)} PKR`
       }],
-      { session }
+      { session, ordered: true }
     );
   });
 

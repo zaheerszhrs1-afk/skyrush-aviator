@@ -411,7 +411,7 @@ async function creditBonus(input: {
       vipLevel: item.vipLevel,
       periodKey: item.periodKey,
       metadata: item.metadata
-    })), { session });
+    })), { session, ordered: true });
 
     await WalletTransactionModel.create([{
       userId: new mongoose.Types.ObjectId(input.userId),
@@ -432,7 +432,7 @@ async function creditBonus(input: {
       referenceId: claims.map((claim) => String(claim._id)).join(","),
       description: input.description,
       metadata: { type: input.type, items: input.items }
-    }], { session });
+    }], { session, ordered: true });
 
     await PlatformAuditModel.create([{
       eventKey: `bonus:${crypto.randomUUID()}`,
@@ -447,7 +447,7 @@ async function creditBonus(input: {
       bonusWalletAfterMinor: Number((state as any).bonusWalletMinor ?? 0),
       description: input.description,
       metadata: { type: input.type, totalMinor, items: input.items }
-    }], { session });
+    }], { session, ordered: true });
   });
   return totalMinor;
 }
