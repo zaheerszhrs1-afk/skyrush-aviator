@@ -1,0 +1,24 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+    container_name: b9t9-app
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env.production
+    ports:
+      - "127.0.0.1:4000:4000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    stop_grace_period: 30s
