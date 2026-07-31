@@ -220,6 +220,70 @@ app.get("/api/wallet", requireAuth, asyncRoute(async (request: AuthenticatedRequ
   response.json({ ok: true, wallet: await engine.getWallet(request.authUser!.id) });
 }));
 
+app.get("/api/rounds/:roundId/proof", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
+  const roundId = cleanText(request.params.roundId, 100);
+  const round = await GameRoundModel.findOne({ roundId, phase: "CRASHED" })
+    .select("+serverSeed roundId commit crashPoint naturalCrashPoint maxCashoutMultiplier liquidityLimited crashedAt createdAt houseEdgePercent")
+    .lean();
+
+  if (!round) {
+    response.status(404).json({ ok: false, message: "Completed round was not found." });
+    return;
+  }
+
+  const serverSeed = String(round.serverSeed ?? "");
+  if (!serverSeed) {
+    response.status(409).json({ ok: false, message: "The proof for this round is unavailable." });
+    return;
+  }
+
+  const calculatedCommit = crypto.createHash("sha256").update(serverSeed).digest("hex");
+  const combinedHash = crypto.createHmac("sha256", serverSeed).update(roundId).digest("hex");
+  const resultHex = combinedHash.slice(0, 13);
+  const resultInteger = Number.parseInt(resultHex, 16);
+  const random = resultInteger / (16 ** 13);
+  const edge = Math.min(0.2, Math.max(0, Number(round.houseEdgePercent ?? 1) / 100));
+  const rawResult = (1 - edge) / Math.max(0.000001, 1 - random);
+  const configuredMax = Math.min(1000, Math.max(1, Number(round.maxCashoutMultiplier ?? 1000)));
+  const calculatedResult = Math.min(configuredMax, Math.max(1, Math.floor(rawResult * 100) / 100));
+  const result = Number(round.crashPoint);
+  const naturalResult = Number(round.naturalCrashPoint ?? calculatedResult);
+  const liquidityLimited = round.liquidityLimited === true;
+  const same = (left: number, right: number) => Math.abs(left - right) < 0.001;
+  const commitVerified = calculatedCommit === String(round.commit);
+  const resultVerified = same(calculatedResult, naturalResult)
+    && (same(result, naturalResult) || (liquidityLimited && same(result, 1)));
+  const hasCompleteRuleMetadata = Number.isFinite(Number(round.naturalCrashPoint))
+    && Number.isFinite(Number(round.maxCashoutMultiplier));
+  const verificationStatus = !commitVerified
+    ? "FAILED"
+    : (resultVerified && (hasCompleteRuleMetadata || same(result, calculatedResult)))
+      ? "VERIFIED"
+      : "PARTIAL";
+  const verified = verificationStatus === "VERIFIED";
+
+  response.json({
+    ok: true,
+    proof: {
+      roundId,
+      result,
+      crashedAt: new Date(round.crashedAt ?? round.createdAt ?? Date.now()).getTime(),
+      serverSeed,
+      clientSeed: roundId,
+      commit: String(round.commit),
+      calculatedCommit,
+      combinedHash,
+      resultHex,
+      resultDecimal: String(resultInteger),
+      calculatedResult,
+      naturalResult,
+      liquidityLimited,
+      verified,
+      verificationStatus
+    }
+  });
+}));
+
 app.get("/api/finance/settings", requireAuth, asyncRoute(async (_request, response) => {
   const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
   response.json({

@@ -15,6 +15,12 @@ export interface PublicBet {
   isDemoBot?: boolean;
 }
 
+export interface RoundHistoryItem {
+  roundId: string;
+  crashPoint: number;
+  crashedAt: number;
+}
+
 export interface RoundSnapshot {
   roundId: string;
   phase: RoundPhase;
@@ -23,7 +29,7 @@ export interface RoundSnapshot {
   startedAt: number | null;
   crashPoint?: number;
   commit: string;
-  history: number[];
+  history: RoundHistoryItem[];
   bets: PublicBet[];
   demoBets: PublicBet[];
   online: number;

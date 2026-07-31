@@ -17,6 +17,30 @@ export interface PublicBet {
   isDemoBot?: boolean;
 }
 
+export interface RoundHistoryItem {
+  roundId: string;
+  crashPoint: number;
+  crashedAt: number;
+}
+
+export interface RoundProof {
+  roundId: string;
+  result: number;
+  crashedAt: number;
+  serverSeed: string;
+  clientSeed: string;
+  commit: string;
+  calculatedCommit: string;
+  combinedHash: string;
+  resultHex: string;
+  resultDecimal: string;
+  calculatedResult: number;
+  naturalResult: number;
+  liquidityLimited: boolean;
+  verified: boolean;
+  verificationStatus: "VERIFIED" | "PARTIAL" | "FAILED";
+}
+
 export interface RoundSnapshot {
   roundId: string;
   phase: RoundPhase;
@@ -25,7 +49,7 @@ export interface RoundSnapshot {
   startedAt: number | null;
   crashPoint?: number;
   commit: string;
-  history: number[];
+  history: RoundHistoryItem[];
   bets: PublicBet[];
   demoBets: PublicBet[];
   online: number;

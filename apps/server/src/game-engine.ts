@@ -16,7 +16,7 @@ import {
   type TransactionType
 } from "./models.js";
 import { fromMinor, minorFromDocument, toMinor } from "./money.js";
-import type { AccountMode, BetSlot, PublicBet, RoundPhase, RoundSnapshot, WalletSnapshot } from "./types.js";
+import type { AccountMode, BetSlot, PublicBet, RoundHistoryItem, RoundPhase, RoundSnapshot, WalletSnapshot } from "./types.js";
 
 const WAITING_MS = 8_000;
 const CRASHED_MS = 3_000;
@@ -150,7 +150,7 @@ export class GameEngine {
   private multiplier = 1;
   private startedAt: number | null = null;
   private phaseEndsAt: number | null = Date.now() + WAITING_MS;
-  private history: number[] = [];
+  private history: RoundHistoryItem[] = [];
   private bets: PublicBet[] = [];
   private activeBets = new Map<string, Partial<Record<BetSlot, PublicBet>>>();
   private queuedBets = new Map<string, Partial<Record<BetSlot, PublicBet>>>();
@@ -173,9 +173,13 @@ export class GameEngine {
     const recentRounds = await GameRoundModel.find({ phase: "CRASHED" })
       .sort({ crashedAt: -1 })
       .limit(30)
-      .select("crashPoint")
+      .select("roundId crashPoint crashedAt createdAt")
       .lean();
-    this.history = recentRounds.map((round) => Number(round.crashPoint));
+    this.history = recentRounds.map((round) => ({
+      roundId: String(round.roundId),
+      crashPoint: Number(round.crashPoint),
+      crashedAt: new Date(round.crashedAt ?? round.createdAt ?? Date.now()).getTime()
+    }));
     await this.refreshAccountingCache();
     await this.prepareRound();
     this.timer = setInterval(() => void this.tick(), TICK_MS);
@@ -726,7 +730,11 @@ export class GameEngine {
         for (const userId of affectedDemoUsers) await this.emitWalletForUser(userId);
         this.roundSettled = true;
         this.phaseEndsAt = Date.now() + CRASHED_MS;
-        this.history = [this.multiplier, ...this.history].slice(0, 30);
+        this.history = [{
+          roundId: this.roundId,
+          crashPoint: this.multiplier,
+          crashedAt: Date.now()
+        }, ...this.history].slice(0, 30);
         await GameRoundModel.updateOne(
           { roundId: this.roundId },
           { $set: { phase: "CRASHED", crashPoint: this.multiplier, crashedAt: new Date() } }
@@ -785,6 +793,9 @@ export class GameEngine {
       commit: this.commit,
       serverSeed: this.serverSeed,
       crashPoint: this.crashPoint,
+      naturalCrashPoint: naturalCrash,
+      maxCashoutMultiplier: this.settings.maxCashoutMultiplier,
+      liquidityLimited: this.crashPoint !== naturalCrash,
       phase: "WAITING",
       houseEdgePercent: this.settings.houseEdgePercent,
       commissionPercent: this.settings.commissionPercent,

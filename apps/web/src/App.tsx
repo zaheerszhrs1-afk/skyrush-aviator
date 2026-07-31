@@ -7,6 +7,7 @@ import { ChatPanel } from "./components/ChatPanel";
 import { AuthPage } from "./components/AuthPage";
 import { FinanceModal } from "./components/FinanceModal";
 import { AdminPanel } from "./components/AdminPanel";
+import { ProvablyFairModal } from "./components/ProvablyFairModal";
 import { apiRequest } from "./lib/api";
 import { socket } from "./lib/socket";
 import type { AccountMode, AuthUser, ChatItem, RoundSnapshot, WalletSnapshot } from "./types";
@@ -59,6 +60,8 @@ export default function App() {
   const [adminView, setAdminView] = useState(window.location.pathname.startsWith("/admin"));
   const [accountMode, setAccountMode] = useState<AccountMode>("REAL");
   const [demoResetBusy, setDemoResetBusy] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [proofRoundId, setProofRoundId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "error" | "success" }>>([]);
 
   const notify = (message: string, type: "error" | "success" = "error") => {
@@ -214,15 +217,34 @@ export default function App() {
         </div>
       </div>
 
-      {accountMode === "DEMO" && <div className="demo-disclosure">Demo mode uses virtual funds. The 75 displayed bots and their bet amounts are simulated and excluded from real wallets, deposits, withdrawals, liquidity, and platform revenue.</div>}
 
       <main className={`game-layout ${chatOpen ? "chat-open" : ""}`}>
         <BetsList bets={visibleBets} online={visibleOnline} />
-        <section className="center-column">
-          <div className="history-strip">
-            {round.history.map((value, index) => <span className={value < 2 ? "blue" : value < 10 ? "purple" : "pink"} key={`${value}-${index}`}>{value.toFixed(2)}x</span>)}
+        <section className={`center-column ${historyExpanded ? "history-open" : ""}`}>
+          <div className={`history-strip ${historyExpanded ? "expanded" : ""}`}>
+            <div className="history-values">
+              {round.history.map((item) => (
+                <button
+                  className={`history-value ${item.crashPoint < 2 ? "blue" : item.crashPoint < 10 ? "purple" : "pink"}`}
+                  key={item.roundId}
+                  type="button"
+                  title={`Open proof for ${item.crashPoint.toFixed(2)}x`}
+                  onClick={() => setProofRoundId(item.roundId)}
+                >
+                  {item.crashPoint.toFixed(2)}x
+                </button>
+              ))}
+            </div>
             <small className="edge-label">House edge {round.houseEdgePercent.toFixed(2)}%</small>
-            <button>•••</button>
+            <button
+              className="history-expand"
+              type="button"
+              aria-label={historyExpanded ? "Collapse round history" : "Expand round history"}
+              aria-expanded={historyExpanded}
+              onClick={() => setHistoryExpanded((value) => !value)}
+            >
+              {historyExpanded ? "×" : "•••"}
+            </button>
           </div>
           <GameGraph round={round} now={now} />
           <div className="bet-panels">
@@ -234,6 +256,7 @@ export default function App() {
       </main>
       {!chatOpen && <button className="floating-chat" aria-label="Open chat" onClick={() => setChatOpen(true)}>💬</button>}
       {financeOpen && accountMode === "REAL" && <FinanceModal wallet={wallet} onClose={() => setFinanceOpen(false)} onWalletRefresh={setWallet} />}
+      {proofRoundId && <ProvablyFairModal roundId={proofRoundId} onClose={() => setProofRoundId(null)} />}
     </div>
   );
 }
