@@ -72,13 +72,21 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
   };
 
   const prefix = accountMode === "DEMO" ? "Demo " : "";
-  const buttonLabel = activeBet && round.phase === "RUNNING"
-    ? `${prefix}Cash Out ${estimatedCashout.toFixed(2)} PKR`
+  const buttonTitle = activeBet && round.phase === "RUNNING"
+    ? `${prefix}Cash Out`
     : queuedBet
-      ? `Accepted ${queuedBet.amount.toFixed(2)} PKR — Next round`
+      ? "Accepted"
       : activeBet
-        ? `${prefix}bet placed ${activeBet.amount.toFixed(2)} PKR`
-        : `${prefix}Bet ${amount.toFixed(2)} PKR`;
+        ? `${prefix}Bet placed`
+        : `${prefix}Bet`;
+
+  const buttonValue = activeBet && round.phase === "RUNNING"
+    ? `${estimatedCashout.toFixed(2)} PKR`
+    : queuedBet
+      ? `${queuedBet.amount.toFixed(2)} PKR — Next round`
+      : activeBet
+        ? `${activeBet.amount.toFixed(2)} PKR`
+        : `${amount.toFixed(2)} PKR`;
 
   const controlsLocked = Boolean(acceptedBet);
 
@@ -106,7 +114,8 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
           onClick={primaryAction}
           disabled={Boolean(acceptedBet)}
         >
-          {buttonLabel}
+          <span className="primary-bet-label">{buttonTitle}</span>{" "}
+          <span className="primary-bet-value">{buttonValue}</span>
         </button>
       </div>
 

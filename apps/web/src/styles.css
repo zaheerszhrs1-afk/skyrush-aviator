@@ -566,6 +566,11 @@ button { color: inherit; }
 @media(max-width:520px){.mode-switch button{padding:5px 8px;font-size:10px}.demo-disclosure{margin:5px 4px 0}.demo-bot-badge{display:none}}
 
 /* Compact responsive bet controls for mobile and tablet. */
+.primary-bet-label,
+.primary-bet-value {
+  display: inline;
+}
+
 @media (max-width: 900px) {
   .bet-panels {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -636,6 +641,15 @@ button { color: inherit; }
     line-height: 1.15;
   }
 
+  .primary-bet-label,
+  .primary-bet-value {
+    display: block;
+  }
+
+  .primary-bet-value {
+    margin-top: 1px;
+  }
+
   .auto-row {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) 52px;
     gap: 4px;
@@ -663,66 +677,121 @@ button { color: inherit; }
   }
 }
 
-@media (max-width: 560px) {
+/* Reference-matched stacked mobile betting cards. */
+@media (max-width: 640px) {
   .bet-panels {
-    grid-template-columns: 1fr;
-    gap: 3px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+    height: auto;
   }
 
   .bet-panel {
-    padding: 3px 5px 4px;
-    border-radius: 12px;
+    position: relative;
+    width: 100%;
+    height: auto;
+    min-height: 107px;
+    padding: 38px 8px 6px;
+    overflow: hidden;
+    border-color: #24272c;
+    border-radius: 16px;
+    background: #1b1d20;
   }
 
-  .segmented {
-    width: min(138px, 58%);
-    height: 25px;
-    margin-bottom: 2px;
-  }
-
-  .segmented button {
-    font-size: 10px;
+  /* The supplied mobile reference uses the compact bet card without tabs. */
+  .bet-panel > .segmented {
+    display: none;
   }
 
   .bet-main-row {
-    grid-template-columns: minmax(105px, 40%) minmax(0, 1fr);
+    grid-template-columns: clamp(104px, 40%, 150px) minmax(0, 1fr);
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .amount-side {
+    justify-content: center;
     gap: 4px;
   }
 
   .stepper {
-    grid-template-columns: 24px minmax(42px, 1fr) 24px;
+    grid-template-columns: 20px minmax(42px, 1fr) 20px;
+    gap: 4px;
+    min-height: 20px;
   }
 
   .stepper button {
-    width: 23px;
-    height: 23px;
-    font-size: 14px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid #3a3d43;
+    background: #303339;
+    font-size: 13px;
+    line-height: 18px;
   }
 
   .stepper input {
-    font-size: 12px;
+    height: 20px;
+    padding: 0;
+    font-size: 13px;
+    line-height: 20px;
+  }
+
+  .quick-grid {
+    gap: 3px 4px;
   }
 
   .quick-grid button {
-    min-height: 19px;
-    font-size: 9px;
+    min-height: 17px;
+    padding: 1px 3px;
+    border-radius: 9px;
+    background: #131518;
+    font-size: 10px;
+    line-height: 15px;
   }
 
   .primary-bet {
-    min-height: 50px;
-    padding: 4px 6px;
-    border-radius: 11px;
-    font-size: 14px;
+    min-height: 62px;
+    padding: 5px 8px;
+    border-width: 1px;
+    border-radius: 10px;
+    font-size: 18px;
+    line-height: 1.12;
+  }
+
+  .primary-bet-value {
+    margin-top: 2px;
+    font-size: 17px;
+  }
+
+  .panel-message:empty {
+    display: none;
+  }
+
+  .panel-message:not(:empty) {
+    height: auto;
+    min-height: 11px;
+    margin-top: 4px;
+    white-space: normal;
   }
 }
 
 @media (max-width: 360px) {
+  .bet-panel {
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
   .bet-main-row {
     grid-template-columns: 102px minmax(0, 1fr);
+    gap: 6px;
   }
 
   .primary-bet {
-    font-size: 13px;
+    font-size: 17px;
+  }
+
+  .primary-bet-value {
+    font-size: 16px;
   }
 }
 
