@@ -1,8 +1,7 @@
 export function Logo() {
   return (
-    <div className="brand" aria-label="SkyRush">
-      <span className="brand-mark">9</span>
-      <span className="brand-name">SKY<span>RUSH</span></span>
+    <div className="brand" aria-label="B9T9">
+      <img className="brand-logo" src="/b9t9-logo.webp" alt="B9T9" />
     </div>
   );
 }

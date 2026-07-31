@@ -66,7 +66,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(optionalAuth);
 
 app.get("/health", asyncRoute(async (_request, response) => {
-  response.json({ ok: true, service: "skyrush-game-server", database: "connected", timestamp: new Date().toISOString() });
+  response.json({ ok: true, service: "b9t9-game-server", database: "connected", timestamp: new Date().toISOString() });
 }));
 
 app.post("/api/auth/register", asyncRoute(async (request, response) => {
@@ -848,7 +848,7 @@ app.use(express.static(webDist));
 app.get("/*splat", (_request, response) => response.sendFile(path.join(webDist, "index.html")));
 
 server.listen(port, "0.0.0.0", () => {
-  console.log(`SkyRush server running on http://0.0.0.0:${port}`);
+  console.log(`B9T9 server running on http://0.0.0.0:${port}`);
 });
 
 const shutdown = async () => {

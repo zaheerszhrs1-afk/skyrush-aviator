@@ -5,7 +5,7 @@ import { AuthSessionModel, UserModel, type AuthProvider, type UserRole } from ".
 import { fromMinor, minorFromDocument } from "./money.js";
 
 const scryptAsync = promisify(crypto.scrypt);
-const SESSION_COOKIE = "skyrush_session";
+const SESSION_COOKIE = "b9t9_session";
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface AuthUser {

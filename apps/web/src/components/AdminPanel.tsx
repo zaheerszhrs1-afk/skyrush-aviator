@@ -165,7 +165,7 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
   return (
     <main className="admin-shell">
       <aside className="admin-sidebar">
-        <div className="admin-title"><strong>SkyRush Admin</strong><span>Peer liquidity & operations</span></div>
+        <div className="admin-title"><strong>B9T9 Admin</strong><span>Peer liquidity & operations</span></div>
         {(["OVERVIEW", "BETS", "USERS", "DEPOSITS", "WITHDRAWALS", "AUDIT", "SETTINGS"] as const).map((item) => (
           <button className={tab === item ? "active" : ""} key={item} onClick={() => setTab(item)}>
             {item[0] + item.slice(1).toLowerCase()}

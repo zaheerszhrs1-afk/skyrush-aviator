@@ -1,4 +1,6 @@
-# SkyRush — Aviator-style first structure
+# B9T9 — Aviator-style game platform
+
+Production domain: `https://b9t9.games`
 
 A first-reveal real-time crash-game structure inspired by the supplied layout, with original branding and artwork.
 

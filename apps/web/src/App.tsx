@@ -204,7 +204,7 @@ export default function App() {
         </div>
       </header>
       <div className="game-title-row">
-        <div className="game-name">SkyRush {accountMode === "DEMO" && <span className="demo-mode-badge">DEMO</span>}</div>
+        <div className="game-name">B9T9 {accountMode === "DEMO" && <span className="demo-mode-badge">DEMO</span>}</div>
         <div className="balance">
           <span className={`connection ${connected ? "ok" : ""}`}>{statusLabel}</span>
           <strong>{visibleBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> PKR

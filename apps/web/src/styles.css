@@ -19,9 +19,8 @@ button { color: inherit; }
 .app-shell { min-height: 100vh; background: radial-gradient(circle at 50% 12%, #1a1d25 0, #0b0c0f 44%, #08090b 100%); }
 .topbar { height: 82px; display: flex; align-items: center; gap: 20px; padding: 0 24px; background: #1d1f28; border-bottom: 1px solid #20232b; }
 .back { border: 0; background: transparent; font-size: 44px; line-height: 1; cursor: pointer; }
-.brand { display: flex; align-items: center; gap: 10px; }
-.brand-mark { width: 42px; height: 48px; display: grid; place-items: center; clip-path: polygon(50% 0, 88% 20%, 80% 80%, 50% 100%, 20% 80%, 12% 20%); background: linear-gradient(145deg,#13b477,#7bd32f); color: #10161c; font-size: 28px; font-weight: 900; }
-.brand-name { font-weight: 900; color: #23a96c; font-size: 24px; letter-spacing: -.5px; }.brand-name span { color:#76ce37; }
+.brand { display: flex; align-items: center; flex: 0 0 auto; }
+.brand-logo { display: block; width: 54px; height: 54px; object-fit: cover; border-radius: 14px; }
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 18px; }.top-actions button { border:0;background:none;color:#9da1aa;font-size:18px; }.profile { width: 42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#174524;color:#8ad065;border:1px solid #245d34; }
 .game-title-row { height: 46px; display:flex; align-items:center; background:#17191b; border-bottom:1px solid #24272b; }
 .game-name { padding-left: 14px; color: var(--red); font-weight: 900; font-size: 25px; font-style: italic; font-family: Georgia, serif; }
@@ -50,7 +49,7 @@ button { color: inherit; }
 .auto-row { display:grid;grid-template-columns:1fr 1.35fr 72px;gap:8px;align-items:center;margin-top:9px;padding-top:8px;border-top:1px solid #2a2d31;color:#b9bdc5;font-size:12px; }.auto-row label{display:flex;align-items:center;gap:5px}.auto-row input[type=checkbox]{accent-color:#27b20e}.auto-value{width:100%;background:#111315;border:1px solid #292d32;color:#d8dce3;border-radius:12px;padding:6px;text-align:center}.panel-message{height:14px;color:#9da2ac;font-size:10px;padding-left:2px;margin-top:2px;overflow:hidden;}
 .chat-panel { background:#030405;border-radius:0;display:flex;flex-direction:column;min-height:0; }.chat-panel header{height:46px;display:flex;align-items:center;gap:5px;padding:0 14px;border-bottom:1px solid #22252a;font-weight:700}.chat-panel header button{margin-left:auto;background:none;border:0;font-size:27px;color:#8a8f98}.online-dot{width:7px;height:7px;border-radius:50%;background:#26cf16}.chat-scroll{padding:12px;overflow:auto;display:flex;flex-direction:column;gap:17px;}.chat-message{display:flex;gap:7px;align-items:flex-start}.chat-avatar{width:27px;height:27px;border-radius:50%;display:grid;place-items:center;background:#262a2f}.chat-message p{margin:1px 0 0;font-size:13px;line-height:1.35;color:#d4d7dd}.chat-message strong{color:#a6abb5}.chat-input{position:relative;margin-top:auto;border-top:1px solid #25282c;padding:8px 40px 22px 12px}.chat-input input{width:100%;border:0;background:transparent;color:#ddd;outline:0}.chat-input button{position:absolute;right:12px;top:6px;border:0;background:none;font-size:25px}.chat-input small{position:absolute;right:12px;bottom:5px;color:#8c9199}
 @media (max-width: 1250px){.game-layout{grid-template-columns:330px 1fr}.chat-panel{display:none}.balance{min-width:360px}.game-graph{min-height:360px}}
-@media (max-width: 900px){.topbar{height:64px;padding:0 12px}.brand-name{font-size:19px}.brand-mark{width:34px;height:39px}.game-title-row{height:42px}.balance{min-width:0;font-size:12px;padding:0 10px}.connection{display:none}.game-layout{display:flex;flex-direction:column;padding:4px}.center-column{order:1}.bets-card{order:2;max-height:420px}.game-graph{min-height:330px}.bet-panels{grid-template-columns:1fr}.top-actions button{display:none}.history-strip{gap:12px}.plane-position{width:146px;height:82px}}
+@media (max-width: 900px){.topbar{height:64px;padding:0 12px}.brand-logo{width:44px;height:44px;border-radius:12px}.game-title-row{height:42px}.balance{min-width:0;font-size:12px;padding:0 10px}.connection{display:none}.game-layout{display:flex;flex-direction:column;padding:4px}.center-column{order:1}.bets-card{order:2;max-height:420px}.game-graph{min-height:330px}.bet-panels{grid-template-columns:1fr}.top-actions button{display:none}.history-strip{gap:12px}.plane-position{width:146px;height:82px}}
 @media (max-width: 520px){.game-name{font-size:20px}.balance strong{font-size:12px}.game-graph{min-height:280px;border-radius:14px}.multiplier-block strong{font-size:58px}.bet-panel{border-radius:15px}.bet-main-row{grid-template-columns:135px 1fr;gap:7px}.primary-bet{min-height:78px;font-size:19px}.auto-row{grid-template-columns:1fr 1.3fr 60px}.bets-card{border-radius:15px}.topbar{gap:9px}.back{font-size:35px}.top-actions{gap:5px}.profile{width:34px;height:34px}.plane-position{width:128px;height:72px}}
 
 /* Desktop game layout matched to the supplied reference. */
@@ -89,18 +88,10 @@ button { color: inherit; }
     color: #f0f2f5;
   }
 
-  .brand {
-    gap: 8px;
-  }
-
-  .brand-mark {
-    width: 34px;
-    height: 44px;
-    font-size: 25px;
-  }
-
-  .brand-name {
-    font-size: 22px;
+  .brand-logo {
+    width: 48px;
+    height: 48px;
+    border-radius: 13px;
   }
 
   .top-actions {

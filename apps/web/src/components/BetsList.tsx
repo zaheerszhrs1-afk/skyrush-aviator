@@ -34,7 +34,7 @@ export function BetsList({ bets, online }: Props) {
           </div>
         ))}
       </div>
-      <div className="fair-footer">🛡 Provably Fair <span>Powered by SKYRUSH</span></div>
+      <div className="fair-footer">🛡 Provably Fair <span>Powered by B9T9</span></div>
     </aside>
   );
 }
