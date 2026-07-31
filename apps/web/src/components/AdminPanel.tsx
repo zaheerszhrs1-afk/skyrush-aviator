@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../lib/api";
-import type { AdminWalletTransaction, AuthUser, DepositRequest, PlatformAuditItem, WithdrawalRequest } from "../types";
+import type { AdminWalletTransaction, AuthUser, DepositRequest, MonthlyBonusRule, PlatformAuditItem, VipLevelRule, WithdrawalRequest } from "../types";
 
 interface Summary {
   users: number;
@@ -16,6 +16,9 @@ interface Summary {
   pendingRewards: number;
   totalWagerRequirement: number;
   commissionWallet: number;
+  bonusWallet: number;
+  totalBonusFunding: number;
+  totalBonusesPaid: number;
   totalCommissionEarned: number;
   totalRewardsPaid: number;
   totalBetVolume: number;
@@ -79,7 +82,38 @@ interface DailyBetReport {
   rows: DailyBetRow[];
 }
 
-type AdminTab = "OVERVIEW" | "BETS" | "USERS" | "DEPOSITS" | "WITHDRAWALS" | "AUDIT" | "SETTINGS";
+interface AdminBonusConfig {
+  vipEnabled: boolean;
+  vipLevelBonusEnabled: boolean;
+  vipMonthlyBonusEnabled: boolean;
+  vipWithdrawalLimitsEnabled: boolean;
+  vipTimezone: string;
+  monthlyClaimStartDay: number;
+  monthlyClaimWindowHours: number;
+  monthlyClaimForceOpen: boolean;
+  vipLevels: VipLevelRule[];
+  monthlyBonusRules: MonthlyBonusRule[];
+}
+
+interface AdminBonusData {
+  config: AdminBonusConfig;
+  budget: {
+    bonusWallet: number;
+    totalFunding: number;
+    totalPaid: number;
+  };
+  claims: Array<{
+    id: string;
+    userId: string | { _id: string; name: string; email: string };
+    type: "LEVEL_UP" | "MONTHLY";
+    amount: number;
+    vipLevel: number;
+    periodKey: string;
+    createdAt: string;
+  }>;
+}
+
+type AdminTab = "OVERVIEW" | "BETS" | "BONUSES" | "USERS" | "DEPOSITS" | "WITHDRAWALS" | "AUDIT" | "SETTINGS";
 
 interface AdminPanelProps {
   onBack: () => void;
@@ -92,6 +126,8 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [betDays, setBetDays] = useState(30);
   const [betReport, setBetReport] = useState<DailyBetReport | null>(null);
+  const [bonusData, setBonusData] = useState<AdminBonusData | null>(null);
+  const [bonusFundAmount, setBonusFundAmount] = useState(10000);
   const [users, setUsers] = useState<AuthUser[]>([]);
   const [deposits, setDeposits] = useState<DepositRequest[]>([]);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
@@ -103,6 +139,7 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
 
   const loadOverview = async () => setSummary((await apiRequest<{ summary: Summary }>("/api/admin/summary")).summary);
   const loadBets = async () => setBetReport(await apiRequest<DailyBetReport>(`/api/admin/bets/daily?days=${betDays}`));
+  const loadBonuses = async () => setBonusData(await apiRequest<AdminBonusData>("/api/admin/bonuses"));
   const loadUsers = async () => setUsers((await apiRequest<{ users: AuthUser[] }>("/api/admin/users")).users);
   const loadDeposits = async () => {
     const [depositResult, settingsResult] = await Promise.all([
@@ -135,6 +172,7 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
     const actions: Record<AdminTab, () => Promise<void>> = {
       OVERVIEW: loadOverview,
       BETS: loadBets,
+      BONUSES: loadBonuses,
       USERS: loadUsers,
       DEPOSITS: loadDeposits,
       WITHDRAWALS: loadWithdrawals,
@@ -166,7 +204,7 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
     <main className="admin-shell">
       <aside className="admin-sidebar">
         <div className="admin-title"><strong>B9T9 Admin</strong><span>Peer liquidity & operations</span></div>
-        {(["OVERVIEW", "BETS", "USERS", "DEPOSITS", "WITHDRAWALS", "AUDIT", "SETTINGS"] as const).map((item) => (
+        {(["OVERVIEW", "BETS", "BONUSES", "USERS", "DEPOSITS", "WITHDRAWALS", "AUDIT", "SETTINGS"] as const).map((item) => (
           <button className={tab === item ? "active" : ""} key={item} onClick={() => setTab(item)}>
             {item[0] + item.slice(1).toLowerCase()}
           </button>
@@ -197,6 +235,9 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
               <article><span>Reserved winner liquidity</span><strong>{money(summary.reservedRewardLiquidity)}</strong></article>
               <article><span>Active bet escrow</span><strong>{money(summary.activeBetEscrow)}</strong></article>
               <article><span>Commission wallet</span><strong className="positive">{money(summary.commissionWallet)}</strong></article>
+              <article><span>VIP bonus wallet</span><strong className="positive">{money(summary.bonusWallet)}</strong></article>
+              <article><span>Bonus budget funded</span><strong>{money(summary.totalBonusFunding)}</strong></article>
+              <article><span>VIP bonuses paid</span><strong>{money(summary.totalBonusesPaid)}</strong></article>
               <article><span>Rewards paid</span><strong>{money(summary.totalRewardsPaid)}</strong></article>
               <article><span>Locked funds</span><strong>{money(summary.lockedFunds)}</strong></article>
               <article><span>Locked winnings</span><strong>{money(summary.pendingRewards)}</strong></article>
@@ -260,6 +301,109 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
           </>
         )}
 
+        {tab === "BONUSES" && bonusData && (
+          <>
+            <div className="admin-bonus-toolbar">
+              <div>
+                <h2>VIP bonus budget</h2>
+                <p>Level-up and monthly bonuses are paid only from this dedicated wallet.</p>
+              </div>
+              <label>
+                Add funds (PKR)
+                <input type="number" min="1" step="0.01" value={bonusFundAmount} onChange={(event) => setBonusFundAmount(Number(event.target.value))} />
+              </label>
+              <button disabled={busy || bonusFundAmount <= 0} onClick={() => void run(async () => {
+                await apiRequest("/api/admin/bonuses/fund", { method: "POST", body: JSON.stringify({ amount: bonusFundAmount }) });
+                await loadBonuses();
+              })}>Fund bonus wallet</button>
+            </div>
+
+            <div className="admin-kpis admin-bonus-kpis">
+              <article><span>Available bonus wallet</span><strong className="positive">{money(bonusData.budget.bonusWallet)}</strong></article>
+              <article><span>Total externally funded</span><strong>{money(bonusData.budget.totalFunding)}</strong></article>
+              <article><span>Total bonuses paid</span><strong>{money(bonusData.budget.totalPaid)}</strong></article>
+              <article><span>Recent claims loaded</span><strong>{bonusData.claims.length}</strong></article>
+            </div>
+
+            <form className="admin-bonus-settings" onSubmit={(event) => { event.preventDefault(); void run(async () => {
+              await apiRequest("/api/admin/bonuses/settings", { method: "PATCH", body: JSON.stringify(bonusData.config) });
+              await loadBonuses();
+            }); }}>
+              <div className="admin-bonus-options">
+                <label className="toggle-setting"><input type="checkbox" checked={bonusData.config.vipEnabled} onChange={(event) => setBonusData({ ...bonusData, config: { ...bonusData.config, vipEnabled: event.target.checked } })} /> Entire VIP system enabled</label>
+                <label className="toggle-setting"><input type="checkbox" checked={bonusData.config.vipLevelBonusEnabled} onChange={(event) => setBonusData({ ...bonusData, config: { ...bonusData.config, vipLevelBonusEnabled: event.target.checked } })} /> Level-up bonus enabled</label>
+                <label className="toggle-setting"><input type="checkbox" checked={bonusData.config.vipMonthlyBonusEnabled} onChange={(event) => setBonusData({ ...bonusData, config: { ...bonusData.config, vipMonthlyBonusEnabled: event.target.checked } })} /> Monthly bonus enabled</label>
+                <label className="toggle-setting"><input type="checkbox" checked={bonusData.config.vipWithdrawalLimitsEnabled} onChange={(event) => setBonusData({ ...bonusData, config: { ...bonusData.config, vipWithdrawalLimitsEnabled: event.target.checked } })} /> VIP withdrawal limits enabled</label>
+                <label className="toggle-setting"><input type="checkbox" checked={bonusData.config.monthlyClaimForceOpen} onChange={(event) => setBonusData({ ...bonusData, config: { ...bonusData.config, monthlyClaimForceOpen: event.target.checked } })} /> Force monthly claim window open</label>
+                <label>VIP timezone<input value={bonusData.config.vipTimezone} onChange={(event) => setBonusData({ ...bonusData, config: { ...bonusData.config, vipTimezone: event.target.value } })} /></label>
+                <label>Monthly claim starts on day<input type="number" min="1" max="28" value={bonusData.config.monthlyClaimStartDay} onChange={(event) => setBonusData({ ...bonusData, config: { ...bonusData.config, monthlyClaimStartDay: Number(event.target.value) } })} /></label>
+                <label>Claim window hours<input type="number" min="1" max="744" value={bonusData.config.monthlyClaimWindowHours} onChange={(event) => setBonusData({ ...bonusData, config: { ...bonusData.config, monthlyClaimWindowHours: Number(event.target.value) } })} /></label>
+              </div>
+
+              <div className="admin-table-card admin-config-table">
+                <div className="admin-table-heading"><div><h2>VIP levels</h2><p>A user reaches a level only after meeting both lifetime deposit and valid-bet turnover.</p></div></div>
+                <table><thead><tr><th>VIP</th><th>Required deposit</th><th>Required turnover</th><th>Level-up bonus</th><th>Daily withdrawals</th></tr></thead>
+                  <tbody>{bonusData.config.vipLevels.map((rule, index) => <tr key={rule.level}>
+                    <td><strong>VIP{rule.level}</strong></td>
+                    <td><input type="number" min="0" step="0.01" value={rule.requiredDeposit} onChange={(event) => {
+                      const vipLevels = [...bonusData.config.vipLevels]; vipLevels[index] = { ...rule, requiredDeposit: Number(event.target.value) };
+                      setBonusData({ ...bonusData, config: { ...bonusData.config, vipLevels } });
+                    }} /></td>
+                    <td><input type="number" min="0" step="0.01" value={rule.requiredTurnover} onChange={(event) => {
+                      const vipLevels = [...bonusData.config.vipLevels]; vipLevels[index] = { ...rule, requiredTurnover: Number(event.target.value) };
+                      setBonusData({ ...bonusData, config: { ...bonusData.config, vipLevels } });
+                    }} /></td>
+                    <td><input type="number" min="0" step="0.01" value={rule.levelUpBonus} onChange={(event) => {
+                      const vipLevels = [...bonusData.config.vipLevels]; vipLevels[index] = { ...rule, levelUpBonus: Number(event.target.value) };
+                      setBonusData({ ...bonusData, config: { ...bonusData.config, vipLevels } });
+                    }} /></td>
+                    <td><input type="number" min="-1" step="1" value={rule.dailyWithdrawalLimit} onChange={(event) => {
+                      const vipLevels = [...bonusData.config.vipLevels]; vipLevels[index] = { ...rule, dailyWithdrawalLimit: Number(event.target.value) };
+                      setBonusData({ ...bonusData, config: { ...bonusData.config, vipLevels } });
+                    }} /><small>-1 = unlimited</small></td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+
+              <div className="admin-table-card admin-config-table">
+                <div className="admin-table-heading"><div><h2>Monthly bonus tiers</h2><p>The highest tier for which both previous-month requirements are met is claimable once.</p></div><button type="button" onClick={() => setBonusData({ ...bonusData, config: { ...bonusData.config, monthlyBonusRules: [...bonusData.config.monthlyBonusRules, { requiredDeposit: 0, requiredTurnover: 0, bonus: 0 }] } })}>+ Add tier</button></div>
+                <table><thead><tr><th>Required deposit</th><th>Required turnover</th><th>Monthly bonus</th><th>Action</th></tr></thead>
+                  <tbody>{bonusData.config.monthlyBonusRules.map((rule, index) => <tr key={index}>
+                    <td><input type="number" min="0" step="0.01" value={rule.requiredDeposit} onChange={(event) => {
+                      const monthlyBonusRules = [...bonusData.config.monthlyBonusRules]; monthlyBonusRules[index] = { ...rule, requiredDeposit: Number(event.target.value) };
+                      setBonusData({ ...bonusData, config: { ...bonusData.config, monthlyBonusRules } });
+                    }} /></td>
+                    <td><input type="number" min="0" step="0.01" value={rule.requiredTurnover} onChange={(event) => {
+                      const monthlyBonusRules = [...bonusData.config.monthlyBonusRules]; monthlyBonusRules[index] = { ...rule, requiredTurnover: Number(event.target.value) };
+                      setBonusData({ ...bonusData, config: { ...bonusData.config, monthlyBonusRules } });
+                    }} /></td>
+                    <td><input type="number" min="0" step="0.01" value={rule.bonus} onChange={(event) => {
+                      const monthlyBonusRules = [...bonusData.config.monthlyBonusRules]; monthlyBonusRules[index] = { ...rule, bonus: Number(event.target.value) };
+                      setBonusData({ ...bonusData, config: { ...bonusData.config, monthlyBonusRules } });
+                    }} /></td>
+                    <td><button type="button" className="danger" onClick={() => setBonusData({ ...bonusData, config: { ...bonusData.config, monthlyBonusRules: bonusData.config.monthlyBonusRules.filter((_, rowIndex) => rowIndex !== index) } })}>Remove</button></td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+
+              <button className="save-settings" disabled={busy}>{busy ? "Saving…" : "Save VIP configuration"}</button>
+            </form>
+
+            <div className="admin-table-card admin-bonus-claims">
+              <h2>Recent VIP bonus claims</h2>
+              <table><thead><tr><th>Date</th><th>User</th><th>Reward</th><th>Level / period</th><th>Amount</th></tr></thead>
+                <tbody>{bonusData.claims.length === 0 ? <tr><td colSpan={5}>No bonus claims yet.</td></tr> : bonusData.claims.map((claim) => <tr key={claim.id}>
+                  <td>{new Date(claim.createdAt).toLocaleString()}</td>
+                  <td>{typeof claim.userId === "string" ? claim.userId : `${claim.userId.name} (${claim.userId.email})`}</td>
+                  <td>{claim.type === "LEVEL_UP" ? "Level-up bonus" : "Monthly bonus"}</td>
+                  <td>{claim.type === "LEVEL_UP" ? `VIP${claim.vipLevel}` : claim.periodKey}</td>
+                  <td className="positive">+{money(claim.amount)}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          </>
+        )}
+
         {tab === "USERS" && (
           <div className="admin-table-card"><table><thead><tr><th>Name</th><th>Email</th><th>Available</th><th>Withdrawal lock</th><th>Bet escrow</th><th>Locked winnings</th><th>Wager remaining</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>{users.map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.email}</td><td>{money(user.balance)}</td>
@@ -315,10 +459,10 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
 
         {tab === "AUDIT" && (
           <>
-            <div className="admin-table-card"><h2>Platform bucket audit</h2><table><thead><tr><th>Date</th><th>Event</th><th>User</th><th>Escrow Δ</th><th>Reserve Δ</th><th>Pool Δ</th><th>Commission Δ</th><th>Description</th></tr></thead>
+            <div className="admin-table-card"><h2>Platform bucket audit</h2><table><thead><tr><th>Date</th><th>Event</th><th>User</th><th>Escrow Δ</th><th>Reserve Δ</th><th>Pool Δ</th><th>Commission Δ</th><th>Bonus Δ</th><th>Description</th></tr></thead>
               <tbody>{audit.map((item) => <tr key={item._id}><td>{new Date(item.createdAt).toLocaleString()}</td><td>{item.type}</td><td>{userName(item.userId)}</td>
                 <td>{money(item.activeBetEscrowDelta)}</td><td>{money(item.reservedLiquidityDelta)}</td><td>{money(item.lossPoolDelta)}</td>
-                <td>{money(item.commissionWalletDelta)}</td><td className="wrap-cell">{item.description}</td></tr>)}</tbody>
+                <td>{money(item.commissionWalletDelta)}</td><td>{money(item.bonusWalletDelta)}</td><td className="wrap-cell">{item.description}</td></tr>)}</tbody>
             </table></div>
             <div className="admin-table-card" style={{ marginTop: 18 }}><h2>User wallet ledger</h2><table><thead><tr><th>Date</th><th>User</th><th>Type</th><th>Amount</th><th>Available after</th><th>Withdrawal lock</th><th>Bet escrow</th><th>Description</th></tr></thead>
               <tbody>{transactions.map((item) => <tr key={item._id}><td>{new Date(item.createdAt).toLocaleString()}</td><td>{userName(item.userId)}</td><td>{item.type}</td>

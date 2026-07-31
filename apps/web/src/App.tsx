@@ -8,6 +8,7 @@ import { AuthPage } from "./components/AuthPage";
 import { FinanceModal } from "./components/FinanceModal";
 import { AdminPanel } from "./components/AdminPanel";
 import { ProvablyFairModal } from "./components/ProvablyFairModal";
+import { BonusCenter } from "./components/BonusCenter";
 import { apiRequest } from "./lib/api";
 import { socket } from "./lib/socket";
 import type { AccountMode, AuthUser, ChatItem, RoundSnapshot, WalletSnapshot } from "./types";
@@ -56,6 +57,7 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [financeOpen, setFinanceOpen] = useState(false);
+  const [bonusOpen, setBonusOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [adminView, setAdminView] = useState(window.location.pathname.startsWith("/admin"));
   const [accountMode, setAccountMode] = useState<AccountMode>("REAL");
@@ -184,6 +186,7 @@ export default function App() {
           </div>
         )}
         <div className="top-actions">
+          {user.role === "USER" && <button className="vip-launch" onClick={() => setBonusOpen(true)}>VIP Bonuses</button>}
           {accountMode === "REAL" ? (
             <button onClick={() => setFinanceOpen(true)}>Add Cash</button>
           ) : (
@@ -199,6 +202,7 @@ export default function App() {
                 <span>{user.email}</span>
                 <small>{user.authProvider === "GOOGLE" ? "Google account" : user.authProvider === "HYBRID" ? "Email + Google" : "Email account"}</small>
                 {accountMode === "REAL" ? <button onClick={() => setFinanceOpen(true)}>Wallet & payments</button> : <button onClick={() => void resetDemo()}>Reset demo balance</button>}
+                {user.role === "USER" && <button onClick={() => { setBonusOpen(true); setProfileOpen(false); }}>VIP bonuses</button>}
                 {user.role === "ADMIN" && <button onClick={openAdmin}>Admin panel</button>}
                 <button className="danger-text" onClick={() => void logout()}>Sign out</button>
               </div>
@@ -257,6 +261,7 @@ export default function App() {
       {!chatOpen && <button className="floating-chat" aria-label="Open chat" onClick={() => setChatOpen(true)}>💬</button>}
       {financeOpen && accountMode === "REAL" && <FinanceModal wallet={wallet} onClose={() => setFinanceOpen(false)} onWalletRefresh={setWallet} />}
       {proofRoundId && <ProvablyFairModal roundId={proofRoundId} onClose={() => setProofRoundId(null)} />}
+      {bonusOpen && user.role === "USER" && <BonusCenter onClose={() => setBonusOpen(false)} onNotify={notify} />}
     </div>
   );
 }

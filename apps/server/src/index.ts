@@ -15,6 +15,15 @@ import { bootstrapAdmin, createAuthSession, destroyAuthSession, hashPassword, op
 import { connectDatabase, disconnectDatabase } from "./database.js";
 import { createDepositRequest, createWithdrawalRequest, reviewDeposit, reviewWithdrawal } from "./finance.js";
 import {
+  adminBonusSummary,
+  claimLevelUpBonus,
+  claimMonthlyBonus,
+  fundBonusWallet,
+  getBonusDashboard,
+  normalizeMonthlyBonusRules,
+  normalizeVipLevels
+} from "./bonus.js";
+import {
   AuthSessionModel,
   ChatMessageModel,
   DepositRequestModel,
@@ -364,6 +373,22 @@ app.get("/api/withdrawals/me", requireAuth, asyncRoute(async (request: Authentic
   response.json({ ok: true, withdrawals });
 }));
 
+app.get("/api/bonuses", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
+  response.json(await getBonusDashboard(request.authUser!.id));
+}));
+
+app.post("/api/bonuses/level-up/claim", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
+  const result = await claimLevelUpBonus(request.authUser!.id);
+  await engine.emitWalletForUser(request.authUser!.id);
+  response.json({ ok: true, ...result, dashboard: await getBonusDashboard(request.authUser!.id) });
+}));
+
+app.post("/api/bonuses/monthly/claim", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
+  const result = await claimMonthlyBonus(request.authUser!.id);
+  await engine.emitWalletForUser(request.authUser!.id);
+  response.json({ ok: true, ...result, dashboard: await getBonusDashboard(request.authUser!.id) });
+}));
+
 app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response) => {
   const now = new Date();
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -432,6 +457,8 @@ app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response
     pendingRewardsMinor: Number(userTotals.pendingRewardsMinor ?? 0),
     lossPoolMinor: Number(stateAny?.lossPoolMinor ?? 0),
     commissionWalletMinor: Number(stateAny?.commissionWalletMinor ?? 0),
+    bonusWalletMinor: Number(stateAny?.bonusWalletMinor ?? 0),
+    totalBonusFundingMinor: Number(stateAny?.totalBonusFundingMinor ?? 0),
     totalCompletedWithdrawalsMinor: Number(stateAny?.totalCompletedWithdrawalsMinor ?? 0)
   });
   const betEscrowMirrorDifferenceMinor =
@@ -462,6 +489,9 @@ app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response
       pendingRewards: fromMinor(userTotals.pendingRewardsMinor),
       totalWagerRequirement: fromMinor(userTotals.wagerRequirementMinor),
       commissionWallet: fromMinor(stateAny?.commissionWalletMinor),
+      bonusWallet: fromMinor(stateAny?.bonusWalletMinor),
+      totalBonusFunding: fromMinor(stateAny?.totalBonusFundingMinor),
+      totalBonusesPaid: fromMinor(stateAny?.totalBonusesPaidMinor),
       totalCommissionEarned: fromMinor(stateAny?.totalCommissionEarnedMinor),
       totalRewardsPaid: fromMinor(stateAny?.totalRewardsPaidMinor),
       totalBetVolume: fromMinor(stateAny?.totalBetVolumeMinor),
@@ -474,7 +504,7 @@ app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response
       dailyRevenue: fromMinor(dailyRevenueResult[0]?.amountMinor ?? 0),
       monthlyRevenue: fromMinor(monthlyRevenueResult[0]?.amountMinor ?? 0),
       reconciliation: {
-        totalInflows: fromMinor(stateAny?.totalApprovedDepositsMinor),
+        totalInflows: fromMinor(Number(stateAny?.totalApprovedDepositsMinor ?? 0) + Number(stateAny?.totalBonusFundingMinor ?? 0)),
         accountedFunds: fromMinor(accounting.accountedMinor),
         difference: fromMinor(accounting.differenceMinor),
         betEscrowMirrorDifference: fromMinor(betEscrowMirrorDifferenceMinor),
@@ -750,12 +780,65 @@ app.get("/api/admin/audit", requireAdmin, asyncRoute(async (request, response) =
       reservedLiquidityDelta: fromMinor(item.reservedLiquidityDeltaMinor),
       lossPoolDelta: fromMinor(item.lossPoolDeltaMinor),
       commissionWalletDelta: fromMinor(item.commissionWalletDeltaMinor),
+      bonusWalletDelta: fromMinor(item.bonusWalletDeltaMinor),
       activeBetEscrowAfter: fromMinor(item.activeBetEscrowAfterMinor),
       reservedLiquidityAfter: fromMinor(item.reservedLiquidityAfterMinor),
       lossPoolAfter: fromMinor(item.lossPoolAfterMinor),
-      commissionWalletAfter: fromMinor(item.commissionWalletAfterMinor)
+      commissionWalletAfter: fromMinor(item.commissionWalletAfterMinor),
+      bonusWalletAfter: fromMinor(item.bonusWalletAfterMinor)
     }))
   });
+}));
+
+app.get("/api/admin/bonuses", requireAdmin, asyncRoute(async (_request, response) => {
+  response.json({ ok: true, ...(await adminBonusSummary()) });
+}));
+
+app.patch("/api/admin/bonuses/settings", requireAdmin, asyncRoute(async (request: AuthenticatedRequest, response) => {
+  const vipLevels = normalizeVipLevels(request.body?.vipLevels);
+  const monthlyBonusRules = normalizeMonthlyBonusRules(request.body?.monthlyBonusRules);
+  const monthlyClaimStartDay = Math.min(28, Math.max(1, Math.floor(numberInput(request.body?.monthlyClaimStartDay))));
+  const monthlyClaimWindowHours = Math.min(744, Math.max(1, Math.floor(numberInput(request.body?.monthlyClaimWindowHours))));
+  if (![monthlyClaimStartDay, monthlyClaimWindowHours].every(Number.isFinite)) {
+    response.status(400).json({ ok: false, message: "Bonus schedule values must be valid numbers." });
+    return;
+  }
+  await PlatformSettingsModel.findOneAndUpdate(
+    { key: "global" },
+    { $set: {
+      vipEnabled: request.body?.vipEnabled !== false,
+      vipLevelBonusEnabled: request.body?.vipLevelBonusEnabled !== false,
+      vipMonthlyBonusEnabled: request.body?.vipMonthlyBonusEnabled !== false,
+      vipWithdrawalLimitsEnabled: request.body?.vipWithdrawalLimitsEnabled !== false,
+      vipTimezone: cleanText(request.body?.vipTimezone || "Asia/Karachi", 80),
+      monthlyClaimStartDay,
+      monthlyClaimWindowHours,
+      monthlyClaimForceOpen: request.body?.monthlyClaimForceOpen === true,
+      vipLevels,
+      monthlyBonusRules,
+      updatedBy: request.authUser!.id
+    } },
+    { new: true, upsert: true }
+  );
+  const state = await PlatformStateModel.findOne({ key: "global" }).lean();
+  await PlatformAuditModel.create({
+    eventKey: `bonus-settings:${crypto.randomUUID()}`,
+    type: "SETTINGS_UPDATED" as const,
+    adminId: new mongoose.Types.ObjectId(request.authUser!.id),
+    activeBetEscrowAfterMinor: Number((state as any)?.activeBetEscrowMinor ?? 0),
+    reservedLiquidityAfterMinor: Number((state as any)?.reservedRewardLiquidityMinor ?? 0),
+    lossPoolAfterMinor: Number((state as any)?.lossPoolMinor ?? 0),
+    commissionWalletAfterMinor: Number((state as any)?.commissionWalletMinor ?? 0),
+    bonusWalletAfterMinor: Number((state as any)?.bonusWalletMinor ?? 0),
+    description: "Updated VIP levels, bonuses, claim schedule and withdrawal limits",
+    metadata: { vipLevels, monthlyBonusRules, monthlyClaimStartDay, monthlyClaimWindowHours }
+  });
+  response.json({ ok: true, ...(await adminBonusSummary()) });
+}));
+
+app.post("/api/admin/bonuses/fund", requireAdmin, asyncRoute(async (request: AuthenticatedRequest, response) => {
+  const result = await fundBonusWallet(request.authUser!.id, numberInput(request.body?.amount));
+  response.json({ ok: true, ...result });
 }));
 
 app.get("/api/admin/settings", requireAdmin, asyncRoute(async (_request, response) => {
@@ -770,7 +853,8 @@ app.get("/api/admin/settings", requireAdmin, asyncRoute(async (_request, respons
       lossPool: fromMinor((state as any)?.lossPoolMinor),
       activeBetEscrow: fromMinor((state as any)?.activeBetEscrowMinor),
       reservedRewardLiquidity: fromMinor((state as any)?.reservedRewardLiquidityMinor),
-      commissionWallet: fromMinor((state as any)?.commissionWalletMinor)
+      commissionWallet: fromMinor((state as any)?.commissionWalletMinor),
+      bonusWallet: fromMinor((state as any)?.bonusWalletMinor)
     }
   });
 }));
@@ -830,6 +914,7 @@ app.patch("/api/admin/settings", requireAdmin, asyncRoute(async (request: Authen
     reservedLiquidityAfterMinor: Number((state as any)?.reservedRewardLiquidityMinor ?? 0),
     lossPoolAfterMinor: Number((state as any)?.lossPoolMinor ?? 0),
     commissionWalletAfterMinor: Number((state as any)?.commissionWalletMinor ?? 0),
+    bonusWalletAfterMinor: Number((state as any)?.bonusWalletMinor ?? 0),
     description: "Updated global game, finance, wagering, liquidity and commission settings",
     metadata: {
       houseEdgePercent,

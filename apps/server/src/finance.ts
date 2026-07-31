@@ -10,6 +10,7 @@ import {
   type TransactionType
 } from "./models.js";
 import { fromMinor, minorFromDocument, toMinor } from "./money.js";
+import { enforceVipWithdrawalLimit } from "./bonus.js";
 
 function walletFields(user: any) {
   const balanceMinor = minorFromDocument(user, "balanceMinor", "balance");
@@ -149,6 +150,7 @@ export async function createWithdrawalRequest(input: {
   const minWithdrawal = Number(settings?.minWithdrawal ?? 500);
   if (amountMinor < toMinor(minWithdrawal)) throw new Error(`Minimum withdrawal is ${minWithdrawal.toFixed(2)} PKR.`);
   if (!input.method.trim() || !input.accountDetails.trim()) throw new Error("Method and account details are required.");
+  await enforceVipWithdrawalLimit(input.userId);
 
   let created: any;
   await mongoose.connection.transaction(async (session) => {
@@ -231,7 +233,8 @@ export async function reviewDeposit(input: {
         $inc: {
           balanceMinor: amountMinor,
           balance: fromMinor(amountMinor),
-          wagerRequirementMinor
+          wagerRequirementMinor,
+          vipLifetimeDepositMinor: amountMinor
         }
       },
       { new: true, session }

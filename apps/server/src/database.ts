@@ -9,6 +9,7 @@ import {
   WithdrawalRequestModel
 } from "./models.js";
 import { toMinor } from "./money.js";
+import { DEFAULT_MONTHLY_BONUS_RULES, DEFAULT_VIP_LEVELS } from "./bonus.js";
 
 const safeMinor = (value: unknown): number => {
   const amount = Number(value ?? 0);
@@ -24,9 +25,12 @@ async function migrateMinorUnitFields(): Promise<void> {
       { pendingRewardsMinor: { $exists: false } },
       { wagerRequirementMinor: { $exists: false } },
       { demoBalanceMinor: { $exists: false } },
-      { authProvider: { $exists: false } }
+      { authProvider: { $exists: false } },
+      { vipLevel: { $exists: false } },
+      { vipLifetimeDepositMinor: { $exists: false } },
+      { vipLifetimeValidBetMinor: { $exists: false } }
     ]
-  }).select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor wagerRequirementMinor demoBalanceMinor authProvider role").lean();
+  }).select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor wagerRequirementMinor demoBalanceMinor authProvider role vipLevel vipLifetimeDepositMinor vipLifetimeValidBetMinor").lean();
 
   if (users.length > 0) {
     await UserModel.bulkWrite(users.map((user: any) => ({
@@ -46,7 +50,10 @@ async function migrateMinorUnitFields(): Promise<void> {
               : user.role === "ADMIN"
                 ? 0
                 : toMinor(Number(process.env.DEMO_STARTING_BALANCE ?? 100_000)),
-            authProvider: user.authProvider ?? "PASSWORD"
+            authProvider: user.authProvider ?? "PASSWORD",
+            vipLevel: Number.isFinite(Number(user.vipLevel)) ? Number(user.vipLevel) : 0,
+            vipLifetimeDepositMinor: Number.isSafeInteger(Number(user.vipLifetimeDepositMinor)) ? Number(user.vipLifetimeDepositMinor) : 0,
+            vipLifetimeValidBetMinor: Number.isSafeInteger(Number(user.vipLifetimeValidBetMinor)) ? Number(user.vipLifetimeValidBetMinor) : 0
           }
         }
       }
@@ -123,6 +130,9 @@ async function migrateMinorUnitFields(): Promise<void> {
     if (!Number.isSafeInteger(Number(stateAny.totalRewardsPaidMinor))) set.totalRewardsPaidMinor = 0;
     if (!Number.isSafeInteger(Number(stateAny.totalBetVolumeMinor))) set.totalBetVolumeMinor = 0;
     if (!Number.isSafeInteger(Number(stateAny.totalLossesMinor))) set.totalLossesMinor = 0;
+    if (!Number.isSafeInteger(Number(stateAny.bonusWalletMinor))) set.bonusWalletMinor = 0;
+    if (!Number.isSafeInteger(Number(stateAny.totalBonusFundingMinor))) set.totalBonusFundingMinor = 0;
+    if (!Number.isSafeInteger(Number(stateAny.totalBonusesPaidMinor))) set.totalBonusesPaidMinor = 0;
     if (Object.keys(set).length > 0) await PlatformStateModel.updateOne({ key: "global" }, { $set: set });
   }
 }
@@ -141,6 +151,21 @@ async function migrateFinanceSettings(): Promise<void> {
     PlatformSettingsModel.updateOne(
       { key: "global", wageringRequirementPercent: { $exists: false } },
       { $set: { wageringRequirementPercent: 30 } }
+    ),
+    PlatformSettingsModel.updateOne(
+      { key: "global", $or: [{ vipLevels: { $exists: false } }, { vipLevels: { $size: 0 } }] },
+      { $set: {
+        vipEnabled: true,
+        vipLevelBonusEnabled: true,
+        vipMonthlyBonusEnabled: true,
+        vipWithdrawalLimitsEnabled: true,
+        vipTimezone: "Asia/Karachi",
+        monthlyClaimStartDay: 1,
+        monthlyClaimWindowHours: 48,
+        monthlyClaimForceOpen: false,
+        vipLevels: DEFAULT_VIP_LEVELS,
+        monthlyBonusRules: DEFAULT_MONTHLY_BONUS_RULES
+      } }
     )
   ]);
 }
@@ -211,7 +236,10 @@ export async function connectDatabase(): Promise<void> {
           totalCompletedWithdrawalsMinor: 0,
           totalRewardsPaidMinor: 0,
           totalBetVolumeMinor: 0,
-          totalLossesMinor: 0
+          totalLossesMinor: 0,
+          bonusWalletMinor: 0,
+          totalBonusFundingMinor: 0,
+          totalBonusesPaidMinor: 0
         }
       },
       { upsert: true }

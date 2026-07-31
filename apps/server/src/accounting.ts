@@ -43,6 +43,8 @@ export interface ReconciliationInput {
   pendingRewardsMinor: number;
   lossPoolMinor: number;
   commissionWalletMinor: number;
+  bonusWalletMinor: number;
+  totalBonusFundingMinor: number;
   totalCompletedWithdrawalsMinor: number;
 }
 
@@ -54,7 +56,8 @@ export function reconcile(input: ReconciliationInput): { accountedMinor: number;
     input.pendingRewardsMinor +
     input.lossPoolMinor +
     input.commissionWalletMinor +
+    input.bonusWalletMinor +
     input.totalCompletedWithdrawalsMinor;
-  const differenceMinor = input.totalApprovedDepositsMinor - accountedMinor;
+  const differenceMinor = (input.totalApprovedDepositsMinor + input.totalBonusFundingMinor) - accountedMinor;
   return { accountedMinor, differenceMinor, balanced: differenceMinor === 0 };
 }

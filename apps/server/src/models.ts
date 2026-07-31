@@ -18,7 +18,8 @@ export type TransactionType =
   | "POOL_PAYOUT"
   | "COMMISSION_CREDIT"
   | "COMMISSION_DEBIT"
-  | "WAGER_REWARD_UNLOCK";
+  | "WAGER_REWARD_UNLOCK"
+  | "BONUS_CREDIT";
 
 export type PlatformAuditType =
   | "BET_ESCROW_LOCK"
@@ -28,7 +29,9 @@ export type PlatformAuditType =
   | "COMMISSION_CREDIT"
   | "DEPOSIT_APPROVED"
   | "WITHDRAWAL_COMPLETED"
-  | "SETTINGS_UPDATED";
+  | "SETTINGS_UPDATED"
+  | "BONUS_BUDGET_FUNDED"
+  | "BONUS_PAID";
 
 const userSchema = new Schema(
   {
@@ -48,6 +51,9 @@ const userSchema = new Schema(
     pendingRewardsMinor: { type: Number, default: 0, min: 0 },
     wagerRequirementMinor: { type: Number, default: 0, min: 0 },
     demoBalanceMinor: { type: Number, default: 10_000_000, min: 0 },
+    vipLevel: { type: Number, default: 0, min: 0, max: 12, index: true },
+    vipLifetimeDepositMinor: { type: Number, default: 0, min: 0 },
+    vipLifetimeValidBetMinor: { type: Number, default: 0, min: 0 },
 
     // Legacy PKR fields are retained during migration and mirrored for compatibility.
     balance: { type: Number, default: 0, min: 0 },
@@ -88,7 +94,8 @@ const walletTransactionSchema = new Schema(
         "POOL_PAYOUT",
         "COMMISSION_CREDIT",
         "COMMISSION_DEBIT",
-        "WAGER_REWARD_UNLOCK"
+        "WAGER_REWARD_UNLOCK",
+        "BONUS_CREDIT"
       ],
       required: true,
       index: true
@@ -132,6 +139,7 @@ const depositRequestSchema = new Schema(
   { timestamps: true, versionKey: false }
 );
 depositRequestSchema.index({ userId: 1, createdAt: -1 });
+depositRequestSchema.index({ userId: 1, status: 1, reviewedAt: 1 });
 
 const withdrawalRequestSchema = new Schema(
   {
@@ -153,6 +161,27 @@ const withdrawalRequestSchema = new Schema(
   { timestamps: true, versionKey: false }
 );
 withdrawalRequestSchema.index({ userId: 1, createdAt: -1 });
+withdrawalRequestSchema.index({ userId: 1, status: 1, createdAt: 1 });
+
+const vipLevelRuleSchema = new Schema(
+  {
+    level: { type: Number, required: true, min: 0, max: 12 },
+    requiredDeposit: { type: Number, required: true, min: 0 },
+    requiredTurnover: { type: Number, required: true, min: 0 },
+    levelUpBonus: { type: Number, required: true, min: 0 },
+    dailyWithdrawalLimit: { type: Number, required: true, min: -1 }
+  },
+  { _id: false, versionKey: false }
+);
+
+const monthlyBonusRuleSchema = new Schema(
+  {
+    requiredDeposit: { type: Number, required: true, min: 0 },
+    requiredTurnover: { type: Number, required: true, min: 0 },
+    bonus: { type: Number, required: true, min: 0 }
+  },
+  { _id: false, versionKey: false }
+);
 
 const platformSettingsSchema = new Schema(
   {
@@ -169,6 +198,16 @@ const platformSettingsSchema = new Schema(
     maxCashoutMultiplier: { type: Number, default: 10, min: 1.01, max: 1000 },
     depositsEnabled: { type: Boolean, default: true },
     withdrawalsEnabled: { type: Boolean, default: true },
+    vipEnabled: { type: Boolean, default: true },
+    vipLevelBonusEnabled: { type: Boolean, default: true },
+    vipMonthlyBonusEnabled: { type: Boolean, default: true },
+    vipWithdrawalLimitsEnabled: { type: Boolean, default: true },
+    vipTimezone: { type: String, default: "Asia/Karachi", maxlength: 80 },
+    monthlyClaimStartDay: { type: Number, default: 1, min: 1, max: 28 },
+    monthlyClaimWindowHours: { type: Number, default: 48, min: 1, max: 744 },
+    monthlyClaimForceOpen: { type: Boolean, default: false },
+    vipLevels: { type: [vipLevelRuleSchema], default: [] },
+    monthlyBonusRules: { type: [monthlyBonusRuleSchema], default: [] },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User" }
   },
   { timestamps: true, versionKey: false }
@@ -189,6 +228,9 @@ const platformStateSchema = new Schema(
     totalRewardsPaidMinor: { type: Number, default: 0, min: 0 },
     totalBetVolumeMinor: { type: Number, default: 0, min: 0 },
     totalLossesMinor: { type: Number, default: 0, min: 0 },
+    bonusWalletMinor: { type: Number, default: 0, min: 0 },
+    totalBonusFundingMinor: { type: Number, default: 0, min: 0 },
+    totalBonusesPaidMinor: { type: Number, default: 0, min: 0 },
 
     // Legacy fields are ignored by the new settlement engine.
     houseBankroll: { type: Number, default: 0 },
@@ -248,6 +290,7 @@ const gameBetSchema = new Schema(
 );
 gameBetSchema.index({ userId: 1, roundId: 1, slot: 1 }, { unique: true });
 gameBetSchema.index({ roundId: 1, status: 1 });
+gameBetSchema.index({ userId: 1, status: 1, settledAt: 1 });
 
 
 const demoBetSchema = new Schema(
@@ -284,7 +327,9 @@ const platformAuditSchema = new Schema(
         "COMMISSION_CREDIT",
         "DEPOSIT_APPROVED",
         "WITHDRAWAL_COMPLETED",
-        "SETTINGS_UPDATED"
+        "SETTINGS_UPDATED",
+        "BONUS_BUDGET_FUNDED",
+        "BONUS_PAID"
       ],
       required: true,
       index: true
@@ -298,16 +343,34 @@ const platformAuditSchema = new Schema(
     reservedLiquidityDeltaMinor: { type: Number, default: 0 },
     lossPoolDeltaMinor: { type: Number, default: 0 },
     commissionWalletDeltaMinor: { type: Number, default: 0 },
+    bonusWalletDeltaMinor: { type: Number, default: 0 },
     activeBetEscrowAfterMinor: { type: Number, default: 0 },
     reservedLiquidityAfterMinor: { type: Number, default: 0 },
     lossPoolAfterMinor: { type: Number, default: 0 },
     commissionWalletAfterMinor: { type: Number, default: 0 },
+    bonusWalletAfterMinor: { type: Number, default: 0 },
     description: { type: String, default: "" },
     metadata: { type: Schema.Types.Mixed, default: {} }
   },
   { timestamps: true, versionKey: false }
 );
 platformAuditSchema.index({ createdAt: -1 });
+
+const bonusClaimSchema = new Schema(
+  {
+    claimKey: { type: String, required: true, unique: true, index: true },
+    userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    type: { type: String, enum: ["LEVEL_UP", "MONTHLY"], required: true, index: true },
+    amountMinor: { type: Number, required: true, min: 1 },
+    amount: { type: Number, required: true, min: 0.01 },
+    vipLevel: { type: Number, default: 0, min: 0, max: 12 },
+    periodKey: { type: String, default: "", index: true },
+    metadata: { type: Schema.Types.Mixed, default: {} }
+  },
+  { timestamps: true, versionKey: false }
+);
+bonusClaimSchema.index({ userId: 1, createdAt: -1 });
+bonusClaimSchema.index({ type: 1, createdAt: -1 });
 
 const chatMessageSchema = new Schema(
   {
@@ -330,4 +393,5 @@ export const GameRoundModel = model("GameRound", gameRoundSchema);
 export const GameBetModel = model("GameBet", gameBetSchema);
 export const DemoBetModel = model("DemoBet", demoBetSchema);
 export const PlatformAuditModel = model("PlatformAudit", platformAuditSchema);
+export const BonusClaimModel = model("BonusClaim", bonusClaimSchema);
 export const ChatMessageModel = model("ChatMessage", chatMessageSchema);

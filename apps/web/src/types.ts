@@ -149,9 +149,91 @@ export interface PlatformAuditItem {
   reservedLiquidityDelta: number;
   lossPoolDelta: number;
   commissionWalletDelta: number;
+  bonusWalletDelta: number;
   activeBetEscrowAfter: number;
   reservedLiquidityAfter: number;
   lossPoolAfter: number;
   commissionWalletAfter: number;
+  bonusWalletAfter: number;
   createdAt: string;
+}
+
+export type BonusSection = "LEVEL_UP" | "MONTHLY" | "WITHDRAWAL";
+
+export interface VipLevelRule {
+  level: number;
+  requiredDeposit: number;
+  requiredTurnover: number;
+  levelUpBonus: number;
+  dailyWithdrawalLimit: number;
+}
+
+export interface MonthlyBonusRule {
+  requiredDeposit: number;
+  requiredTurnover: number;
+  bonus: number;
+}
+
+export interface BonusDashboard {
+  ok: true;
+  config: {
+    vipEnabled: boolean;
+    vipLevelBonusEnabled: boolean;
+    vipMonthlyBonusEnabled: boolean;
+    vipWithdrawalLimitsEnabled: boolean;
+    vipTimezone: string;
+    monthlyClaimStartDay: number;
+    monthlyClaimWindowHours: number;
+    monthlyClaimForceOpen: boolean;
+    vipLevels: VipLevelRule[];
+    monthlyBonusRules: MonthlyBonusRule[];
+  };
+  progress: {
+    vipLevel: number;
+    lifetimeDeposit: number;
+    lifetimeValidBet: number;
+    currentRule: VipLevelRule;
+    nextRule: VipLevelRule | null;
+    depositPercent: number;
+    turnoverPercent: number;
+  };
+  levelUp: {
+    enabled: boolean;
+    claimableLevels: number[];
+    claimableAmount: number;
+    claimedLevels: number[];
+  };
+  monthly: {
+    enabled: boolean;
+    currentPeriodKey: string;
+    currentDeposit: number;
+    currentValidBet: number;
+    projectedBonus: number;
+    claimPeriodKey: string;
+    claimDeposit: number;
+    claimValidBet: number;
+    eligibleBonus: number;
+    claimed: boolean;
+    claimedAt: string | null;
+    claimOpen: boolean;
+    claimWindowStart: string;
+    claimWindowEnd: string;
+    claimWindowForced: boolean;
+  };
+  withdrawal: {
+    dailyLimit: number;
+    unlimited: boolean;
+    usedToday: number;
+    remainingToday: number | null;
+    timezone: string;
+  };
+  wallet: { bonusBudget: number };
+  recentClaims: Array<{
+    id: string;
+    type: "LEVEL_UP" | "MONTHLY";
+    vipLevel: number;
+    periodKey: string;
+    amount: number;
+    createdAt: string;
+  }>;
 }
