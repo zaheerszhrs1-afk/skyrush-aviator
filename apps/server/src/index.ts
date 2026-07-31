@@ -101,6 +101,7 @@ app.post("/api/auth/register", asyncRoute(async (request, response) => {
     withdrawalLockedMinor: 0,
     bettingLockedMinor: 0,
     pendingRewardsMinor: 0,
+    wagerRequirementMinor: 0,
     demoBalanceMinor: demoStartingBalanceMinor,
     balance: 0,
     lockedBalance: 0
@@ -152,6 +153,7 @@ app.post("/api/auth/google", asyncRoute(async (request, response) => {
       withdrawalLockedMinor: 0,
       bettingLockedMinor: 0,
       pendingRewardsMinor: 0,
+      wagerRequirementMinor: 0,
       demoBalanceMinor: demoStartingBalanceMinor,
       balance: 0,
       lockedBalance: 0,
@@ -216,6 +218,20 @@ await engine.initialize();
 
 app.get("/api/wallet", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
   response.json({ ok: true, wallet: await engine.getWallet(request.authUser!.id) });
+}));
+
+app.get("/api/finance/settings", requireAuth, asyncRoute(async (_request, response) => {
+  const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
+  response.json({
+    ok: true,
+    settings: {
+      minDeposit: Number((settings as any)?.minDeposit ?? 100),
+      minWithdrawal: Number((settings as any)?.minWithdrawal ?? 500),
+      wageringRequirementPercent: Number((settings as any)?.wageringRequirementPercent ?? 30),
+      depositsEnabled: (settings as any)?.depositsEnabled !== false,
+      withdrawalsEnabled: (settings as any)?.withdrawalsEnabled !== false
+    }
+  });
 }));
 
 app.post("/api/demo/reset", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
@@ -320,7 +336,8 @@ app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response
           availableMinor: { $sum: { $ifNull: ["$balanceMinor", 0] } },
           withdrawalLockedMinor: { $sum: { $ifNull: ["$withdrawalLockedMinor", 0] } },
           bettingLockedMinor: { $sum: { $ifNull: ["$bettingLockedMinor", 0] } },
-          pendingRewardsMinor: { $sum: { $ifNull: ["$pendingRewardsMinor", 0] } }
+          pendingRewardsMinor: { $sum: { $ifNull: ["$pendingRewardsMinor", 0] } },
+          wagerRequirementMinor: { $sum: { $ifNull: ["$wagerRequirementMinor", 0] } }
         }
       }
     ]),
@@ -340,7 +357,8 @@ app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response
     availableMinor: 0,
     withdrawalLockedMinor: 0,
     bettingLockedMinor: 0,
-    pendingRewardsMinor: 0
+    pendingRewardsMinor: 0,
+    wagerRequirementMinor: 0
   };
   const accounting = reconcile({
     totalApprovedDepositsMinor: Number(stateAny?.totalApprovedDepositsMinor ?? 0),
@@ -378,6 +396,7 @@ app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response
       availableRewardLiquidity: fromMinor(availableRewardLiquidityMinor),
       lossPool: fromMinor(stateAny?.lossPoolMinor),
       pendingRewards: fromMinor(userTotals.pendingRewardsMinor),
+      totalWagerRequirement: fromMinor(userTotals.wagerRequirementMinor),
       commissionWallet: fromMinor(stateAny?.commissionWalletMinor),
       totalCommissionEarned: fromMinor(stateAny?.totalCommissionEarnedMinor),
       totalRewardsPaid: fromMinor(stateAny?.totalRewardsPaidMinor),
@@ -410,6 +429,150 @@ app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response
       }))
     }
   });
+}));
+
+app.get("/api/admin/bets/daily", requireAdmin, asyncRoute(async (request, response) => {
+  const requestedDays = Number(request.query.days ?? 30);
+  const days = Number.isFinite(requestedDays)
+    ? Math.min(365, Math.max(7, Math.floor(requestedDays)))
+    : 30;
+  const karachiOffsetMs = 5 * 60 * 60 * 1000;
+  const karachiNow = new Date(Date.now() + karachiOffsetMs);
+  const start = new Date(
+    Date.UTC(
+      karachiNow.getUTCFullYear(),
+      karachiNow.getUTCMonth(),
+      karachiNow.getUTCDate() - (days - 1)
+    ) - karachiOffsetMs
+  );
+
+  const daily = await GameBetModel.aggregate([
+    {
+      $match: {
+        createdAt: { $gte: start },
+        status: { $ne: "REFUNDED" }
+      }
+    },
+    {
+      $project: {
+        day: {
+          $dateToString: { format: "%Y-%m-%d", date: "$createdAt", timezone: "Asia/Karachi" }
+        },
+        amountMinor: { $ifNull: ["$amountMinor", 0] },
+        payoutMinor: { $ifNull: ["$payoutMinor", 0] },
+        commissionMinor: { $ifNull: ["$commissionMinor", 0] },
+        isWon: { $cond: [{ $eq: ["$status", "CASHED_OUT"] }, 1, 0] },
+        isLost: { $cond: [{ $eq: ["$status", "LOST"] }, 1, 0] },
+        isOpen: { $cond: [{ $in: ["$status", ["QUEUED", "ACTIVE"]] }, 1, 0] },
+        playerLossMinor: {
+          $cond: [{ $eq: ["$status", "LOST"] }, { $ifNull: ["$amountMinor", 0] }, 0]
+        },
+        playerProfitMinor: {
+          $cond: [
+            { $eq: ["$status", "CASHED_OUT"] },
+            {
+              $max: [
+                0,
+                {
+                  $subtract: [
+                    { $ifNull: ["$payoutMinor", 0] },
+                    { $ifNull: ["$amountMinor", 0] }
+                  ]
+                }
+              ]
+            },
+            0
+          ]
+        }
+      }
+    },
+    {
+      $group: {
+        _id: "$day",
+        bets: { $sum: 1 },
+        wonBets: { $sum: "$isWon" },
+        lostBets: { $sum: "$isLost" },
+        openBets: { $sum: "$isOpen" },
+        betVolumeMinor: { $sum: "$amountMinor" },
+        payoutMinor: { $sum: "$payoutMinor" },
+        playerLossMinor: { $sum: "$playerLossMinor" },
+        playerProfitMinor: { $sum: "$playerProfitMinor" },
+        commissionMinor: { $sum: "$commissionMinor" }
+      }
+    },
+    { $sort: { _id: -1 } }
+  ]);
+
+  const rows = daily.map((item: any): {
+    date: string;
+    bets: number;
+    wonBets: number;
+    lostBets: number;
+    openBets: number;
+    betVolume: number;
+    payout: number;
+    playerLoss: number;
+    playerProfit: number;
+    commission: number;
+    netResult: number;
+  } => {
+    const playerLossMinor = Number(item.playerLossMinor ?? 0);
+    const playerProfitMinor = Number(item.playerProfitMinor ?? 0);
+    return {
+      date: String(item._id),
+      bets: Number(item.bets ?? 0),
+      wonBets: Number(item.wonBets ?? 0),
+      lostBets: Number(item.lostBets ?? 0),
+      openBets: Number(item.openBets ?? 0),
+      betVolume: fromMinor(item.betVolumeMinor ?? 0),
+      payout: fromMinor(item.payoutMinor ?? 0),
+      playerLoss: fromMinor(playerLossMinor),
+      playerProfit: fromMinor(playerProfitMinor),
+      commission: fromMinor(item.commissionMinor ?? 0),
+      netResult: fromMinor(playerLossMinor - playerProfitMinor)
+    };
+  });
+
+  const rowsByDate = new Map(rows.map((row) => [row.date, row]));
+  const completeRows = Array.from({ length: days }, (_, index) => {
+    const date = new Date(Date.UTC(
+      karachiNow.getUTCFullYear(),
+      karachiNow.getUTCMonth(),
+      karachiNow.getUTCDate() - index
+    ));
+    const key = date.toISOString().slice(0, 10);
+    return rowsByDate.get(key) ?? {
+      date: key,
+      bets: 0,
+      wonBets: 0,
+      lostBets: 0,
+      openBets: 0,
+      betVolume: 0,
+      payout: 0,
+      playerLoss: 0,
+      playerProfit: 0,
+      commission: 0,
+      netResult: 0
+    };
+  });
+
+  const totals = completeRows.reduce(
+    (result, row) => ({
+      bets: result.bets + row.bets,
+      wonBets: result.wonBets + row.wonBets,
+      lostBets: result.lostBets + row.lostBets,
+      openBets: result.openBets + row.openBets,
+      betVolume: result.betVolume + row.betVolume,
+      payout: result.payout + row.payout,
+      playerLoss: result.playerLoss + row.playerLoss,
+      playerProfit: result.playerProfit + row.playerProfit,
+      commission: result.commission + row.commission,
+      netResult: result.netResult + row.netResult
+    }),
+    { bets: 0, wonBets: 0, lostBets: 0, openBets: 0, betVolume: 0, payout: 0, playerLoss: 0, playerProfit: 0, commission: 0, netResult: 0 }
+  );
+
+  response.json({ ok: true, days, timezone: "Asia/Karachi", totals, rows: completeRows });
 }));
 
 app.get("/api/admin/users", requireAdmin, asyncRoute(async (request, response) => {
@@ -553,9 +716,22 @@ app.patch("/api/admin/settings", requireAdmin, asyncRoute(async (request: Authen
   const commissionPercent = Math.min(50, Math.max(0, numberInput(request.body?.commissionPercent)));
   const reservePercent = Math.min(95, Math.max(0, numberInput(request.body?.reservePercent)));
   const minBet = Math.max(1, numberInput(request.body?.minBet));
+  const minDeposit = Math.max(1, numberInput(request.body?.minDeposit));
+  const minWithdrawal = Math.max(1, numberInput(request.body?.minWithdrawal));
+  const wageringRequirementPercent = Math.min(100, Math.max(0, numberInput(request.body?.wageringRequirementPercent)));
   const maxBet = Math.max(minBet, numberInput(request.body?.maxBet));
   const maxCashoutMultiplier = Math.min(1000, Math.max(1.01, numberInput(request.body?.maxCashoutMultiplier)));
-  if (![houseEdgePercent, commissionPercent, reservePercent, minBet, maxBet, maxCashoutMultiplier].every(Number.isFinite)) {
+  if (![
+    houseEdgePercent,
+    commissionPercent,
+    reservePercent,
+    minBet,
+    minDeposit,
+    minWithdrawal,
+    wageringRequirementPercent,
+    maxBet,
+    maxCashoutMultiplier
+  ].every(Number.isFinite)) {
     response.status(400).json({ ok: false, message: "All numeric settings must be valid numbers." });
     return;
   }
@@ -568,6 +744,9 @@ app.patch("/api/admin/settings", requireAdmin, asyncRoute(async (request: Authen
         commissionPercent,
         reservePercent,
         minBet,
+        minDeposit,
+        minWithdrawal,
+        wageringRequirementPercent,
         maxBet,
         maxCashoutMultiplier,
         depositsEnabled: request.body?.depositsEnabled !== false,
@@ -587,12 +766,15 @@ app.patch("/api/admin/settings", requireAdmin, asyncRoute(async (request: Authen
     reservedLiquidityAfterMinor: Number((state as any)?.reservedRewardLiquidityMinor ?? 0),
     lossPoolAfterMinor: Number((state as any)?.lossPoolMinor ?? 0),
     commissionWalletAfterMinor: Number((state as any)?.commissionWalletMinor ?? 0),
-    description: "Updated global game, liquidity and commission settings",
+    description: "Updated global game, finance, wagering, liquidity and commission settings",
     metadata: {
       houseEdgePercent,
       commissionPercent,
       reservePercent,
       minBet,
+      minDeposit,
+      minWithdrawal,
+      wageringRequirementPercent,
       maxBet,
       maxCashoutMultiplier,
       depositsEnabled: request.body?.depositsEnabled !== false,
@@ -600,7 +782,7 @@ app.patch("/api/admin/settings", requireAdmin, asyncRoute(async (request: Authen
     }
   });
 
-  response.json({ ok: true, settings, message: "Settings apply to future rounds and new bets." });
+  response.json({ ok: true, settings, message: "Settings saved. Deposit wagering percentage applies when each deposit is approved." });
 }));
 
 io.use(async (socket, next) => {

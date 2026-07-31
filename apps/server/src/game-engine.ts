@@ -84,6 +84,7 @@ function walletTransaction(input: {
   availableDeltaMinor?: number;
   withdrawalLockedDeltaMinor?: number;
   bettingLockedDeltaMinor?: number;
+  pendingRewardsDeltaMinor?: number;
   user: any;
   referenceId: string;
   description: string;
@@ -101,7 +102,7 @@ function walletTransaction(input: {
     availableDeltaMinor: input.availableDeltaMinor ?? 0,
     withdrawalLockedDeltaMinor: input.withdrawalLockedDeltaMinor ?? 0,
     bettingLockedDeltaMinor: input.bettingLockedDeltaMinor ?? 0,
-    pendingRewardsDeltaMinor: 0,
+    pendingRewardsDeltaMinor: input.pendingRewardsDeltaMinor ?? 0,
     balanceAfterMinor: balanceMinor,
     withdrawalLockedAfterMinor: withdrawalLockedMinor,
     bettingLockedAfterMinor: bettingLockedMinor,
@@ -113,6 +114,27 @@ function walletTransaction(input: {
     referenceId: input.referenceId,
     description: input.description,
     metadata: input.metadata ?? {}
+  };
+}
+
+function wageringState(user: any, stakeMinor: number): {
+  requirementBeforeMinor: number;
+  requirementAfterMinor: number;
+  contributionMinor: number;
+  pendingRewardsBeforeMinor: number;
+} {
+  const requirementBeforeMinor = Number.isSafeInteger(Number(user?.wagerRequirementMinor))
+    ? Math.max(0, Number(user.wagerRequirementMinor))
+    : 0;
+  const pendingRewardsBeforeMinor = Number.isSafeInteger(Number(user?.pendingRewardsMinor))
+    ? Math.max(0, Number(user.pendingRewardsMinor))
+    : 0;
+  const contributionMinor = Math.min(requirementBeforeMinor, Math.max(0, stakeMinor));
+  return {
+    requirementBeforeMinor,
+    requirementAfterMinor: requirementBeforeMinor - contributionMinor,
+    contributionMinor,
+    pendingRewardsBeforeMinor
   };
 }
 
@@ -513,18 +535,31 @@ export class GameEngine {
           throw new Error("Reserved liquidity settlement failed. No wallet was changed; contact support.");
         }
 
-        const updatedUser = await UserModel.findOneAndUpdate(
-          { _id: userId, bettingLockedMinor: { $gte: amountMinor } },
-          {
-            $inc: {
-              balanceMinor: payout.payoutMinor,
-              bettingLockedMinor: -amountMinor,
-              balance: fromMinor(payout.payoutMinor)
-            }
-          },
-          { new: true, session }
-        );
+        const updatedUser = await UserModel.findOne({
+          _id: userId,
+          bettingLockedMinor: { $gte: amountMinor }
+        }).session(session);
         if (!updatedUser) throw new Error("Bet escrow is inconsistent for this user.");
+
+        const wager = wageringState(updatedUser, amountMinor);
+        const lockedCurrentProfitMinor = wager.requirementAfterMinor > 0 ? payout.netProfitMinor : 0;
+        const availablePayoutMinor = payout.payoutMinor - lockedCurrentProfitMinor;
+        const releasedPendingMinor = wager.requirementAfterMinor === 0
+          ? wager.pendingRewardsBeforeMinor
+          : 0;
+        const availableBeforeMinor = minorFromDocument(updatedUser, "balanceMinor", "balance");
+        const bettingLockedBeforeMinor = Number((updatedUser as any).bettingLockedMinor ?? 0);
+
+        (updatedUser as any).balanceMinor = availableBeforeMinor + availablePayoutMinor + releasedPendingMinor;
+        (updatedUser as any).balance = fromMinor((updatedUser as any).balanceMinor);
+        (updatedUser as any).bettingLockedMinor = bettingLockedBeforeMinor - amountMinor;
+        (updatedUser as any).pendingRewardsMinor =
+          wager.pendingRewardsBeforeMinor + lockedCurrentProfitMinor - releasedPendingMinor;
+        (updatedUser as any).wagerRequirementMinor = wager.requirementAfterMinor;
+        await updatedUser.save({ session });
+
+        (dbBet as any).wagerContributionMinor = wager.contributionMinor;
+        await dbBet.save({ session });
 
         await GameRoundModel.updateOne(
           { roundId: this.roundId },
@@ -538,28 +573,48 @@ export class GameEngine {
           { session }
         );
 
-        await WalletTransactionModel.create(
-          [walletTransaction({
+        const walletEntries: WalletTransactionInputDocument[] = [walletTransaction({
+          userId,
+          type: "CASHOUT_CREDIT",
+          amountMinor: payout.payoutMinor,
+          availableDeltaMinor: availablePayoutMinor,
+          bettingLockedDeltaMinor: -amountMinor,
+          pendingRewardsDeltaMinor: lockedCurrentProfitMinor,
+          user: updatedUser,
+          referenceId: bet.id,
+          description: lockedCurrentProfitMinor > 0
+            ? `Cashed out at ${lockedMultiplier.toFixed(2)}x; ${fromMinor(lockedCurrentProfitMinor).toFixed(2)} PKR profit locked until wagering is completed`
+            : `Cashed out at ${lockedMultiplier.toFixed(2)}x; commission ${fromMinor(payout.commissionMinor).toFixed(2)} PKR`,
+          metadata: {
+            roundId: this.roundId,
+            slot,
+            multiplier: lockedMultiplier,
+            stakeMinor: amountMinor,
+            grossProfitMinor: payout.grossProfitMinor,
+            netProfitMinor: payout.netProfitMinor,
+            commissionMinor: payout.commissionMinor,
+            wagerContributionMinor: wager.contributionMinor,
+            wagerRequirementBeforeMinor: wager.requirementBeforeMinor,
+            wagerRequirementAfterMinor: wager.requirementAfterMinor,
+            lockedCurrentProfitMinor
+          }
+        })];
+
+        if (releasedPendingMinor > 0) {
+          walletEntries.push(walletTransaction({
             userId,
-            type: "CASHOUT_CREDIT",
-            amountMinor: payout.payoutMinor,
-            availableDeltaMinor: payout.payoutMinor,
-            bettingLockedDeltaMinor: -amountMinor,
+            type: "WAGER_REWARD_UNLOCK",
+            amountMinor: releasedPendingMinor,
+            availableDeltaMinor: releasedPendingMinor,
+            pendingRewardsDeltaMinor: -releasedPendingMinor,
             user: updatedUser,
             referenceId: bet.id,
-            description: `Cashed out at ${lockedMultiplier.toFixed(2)}x; commission ${fromMinor(payout.commissionMinor).toFixed(2)} PKR`,
-            metadata: {
-              roundId: this.roundId,
-              slot,
-              multiplier: lockedMultiplier,
-              stakeMinor: amountMinor,
-              grossProfitMinor: payout.grossProfitMinor,
-              netProfitMinor: payout.netProfitMinor,
-              commissionMinor: payout.commissionMinor
-            }
-          })],
-          { session }
-        );
+            description: `Wagering completed; unlocked ${fromMinor(releasedPendingMinor).toFixed(2)} PKR previous winnings`,
+            metadata: { roundId: this.roundId, wagerRequirementAfterMinor: 0 }
+          }));
+        }
+
+        await WalletTransactionModel.create(walletEntries, { session });
 
         await PlatformAuditModel.create(
           [
@@ -982,12 +1037,30 @@ export class GameEngine {
       );
       if (!dbBet) return;
 
-      const updatedUser = await UserModel.findOneAndUpdate(
-        { _id: dbBet.userId, bettingLockedMinor: { $gte: amountMinor } },
-        { $inc: { bettingLockedMinor: -amountMinor } },
-        { new: true, session }
-      );
+      const updatedUser = await UserModel.findOne({
+        _id: dbBet.userId,
+        bettingLockedMinor: { $gte: amountMinor }
+      }).session(session);
       if (!updatedUser) throw new Error(`Bet escrow mismatch for ${dbBet.betId}.`);
+
+      const wager = wageringState(updatedUser, amountMinor);
+      const releasedPendingMinor = wager.requirementAfterMinor === 0
+        ? wager.pendingRewardsBeforeMinor
+        : 0;
+      const availableBeforeMinor = minorFromDocument(updatedUser, "balanceMinor", "balance");
+      const bettingLockedBeforeMinor = Number((updatedUser as any).bettingLockedMinor ?? 0);
+
+      (updatedUser as any).bettingLockedMinor = bettingLockedBeforeMinor - amountMinor;
+      (updatedUser as any).wagerRequirementMinor = wager.requirementAfterMinor;
+      if (releasedPendingMinor > 0) {
+        (updatedUser as any).pendingRewardsMinor = 0;
+        (updatedUser as any).balanceMinor = availableBeforeMinor + releasedPendingMinor;
+        (updatedUser as any).balance = fromMinor((updatedUser as any).balanceMinor);
+      }
+      await updatedUser.save({ session });
+
+      (dbBet as any).wagerContributionMinor = wager.contributionMinor;
+      await dbBet.save({ session });
 
       stateAfter = await PlatformStateModel.findOneAndUpdate(
         {
@@ -1013,19 +1086,38 @@ export class GameEngine {
         { session }
       );
 
-      await WalletTransactionModel.create(
-        [walletTransaction({
+      const walletEntries: WalletTransactionInputDocument[] = [walletTransaction({
+        userId: dbBet.userId,
+        type: "BET_LOSS",
+        amountMinor: 0,
+        bettingLockedDeltaMinor: -amountMinor,
+        user: updatedUser,
+        referenceId: dbBet.betId,
+        description: `Lost stake moved atomically from bet escrow to the peer loss pool`,
+        metadata: {
+          roundId: this.roundId,
+          amountMinor,
+          wagerContributionMinor: wager.contributionMinor,
+          wagerRequirementBeforeMinor: wager.requirementBeforeMinor,
+          wagerRequirementAfterMinor: wager.requirementAfterMinor
+        }
+      })];
+
+      if (releasedPendingMinor > 0) {
+        walletEntries.push(walletTransaction({
           userId: dbBet.userId,
-          type: "BET_LOSS",
-          amountMinor: 0,
-          bettingLockedDeltaMinor: -amountMinor,
+          type: "WAGER_REWARD_UNLOCK",
+          amountMinor: releasedPendingMinor,
+          availableDeltaMinor: releasedPendingMinor,
+          pendingRewardsDeltaMinor: -releasedPendingMinor,
           user: updatedUser,
           referenceId: dbBet.betId,
-          description: `Lost stake moved atomically from bet escrow to the peer loss pool`,
-          metadata: { roundId: this.roundId, amountMinor }
-        })],
-        { session }
-      );
+          description: `Wagering completed; unlocked ${fromMinor(releasedPendingMinor).toFixed(2)} PKR previous winnings`,
+          metadata: { roundId: this.roundId, wagerRequirementAfterMinor: 0 }
+        }));
+      }
+
+      await WalletTransactionModel.create(walletEntries, { session });
 
       await PlatformAuditModel.create(
         [{

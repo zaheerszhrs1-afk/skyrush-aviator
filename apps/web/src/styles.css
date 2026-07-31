@@ -1027,3 +1027,145 @@ button { color: inherit; }
 @media (max-width:900px) {
   .chat-panel { display:none !important; }
 }
+
+/* Admin desktop viewport and daily bet reporting. */
+@media (min-width: 901px) {
+  .admin-shell {
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .admin-content {
+    height: 100vh;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+}
+
+.admin-report-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  border: 1px solid #2a2d33;
+  border-radius: 16px;
+  background: #141619;
+}
+
+.admin-report-toolbar h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.admin-report-toolbar p {
+  margin: 5px 0 0;
+  color: #858b95;
+  font-size: 12px;
+}
+
+.admin-report-toolbar label {
+  display: flex;
+  min-width: 160px;
+  flex-direction: column;
+  gap: 6px;
+  color: #858b95;
+  font-size: 12px;
+}
+
+.admin-report-toolbar select {
+  width: 100%;
+  border: 1px solid #343840;
+  border-radius: 10px;
+  background: #1a1c20;
+  color: #edf0f4;
+  padding: 9px 11px;
+}
+
+.admin-bet-kpis {
+  grid-template-columns: repeat(3, minmax(170px, 1fr));
+}
+
+.finance-rule {
+  display: block;
+  margin-top: -4px;
+  color: #9298a2;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 700px) {
+  .admin-report-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-bet-kpis {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 901px) {
+  .admin-sidebar {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
+.admin-inline-setting {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, 220px) auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  border: 1px solid #2a2d33;
+  border-radius: 16px;
+  background: #141619;
+}
+
+.admin-inline-setting > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-inline-setting span {
+  color: #858b95;
+  font-size: 12px;
+}
+
+.admin-inline-setting input {
+  width: 100%;
+  border: 1px solid #343840;
+  border-radius: 10px;
+  background: #1a1c20;
+  color: #edf0f4;
+  padding: 10px 11px;
+}
+
+.admin-inline-setting button {
+  border: 0;
+  border-radius: 10px;
+  background: #2b9520;
+  color: #fff;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.admin-inline-setting button:disabled {
+  opacity: .65;
+  cursor: not-allowed;
+}
+
+@media (max-width: 700px) {
+  .admin-inline-setting {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}

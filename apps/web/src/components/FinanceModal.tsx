@@ -19,6 +19,7 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh }: FinanceModalP
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [deposits, setDeposits] = useState<DepositRequest[]>([]);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
+  const [financeSettings, setFinanceSettings] = useState({ minDeposit: 100, minWithdrawal: 500, wageringRequirementPercent: 30, depositsEnabled: true, withdrawalsEnabled: true });
 
   const loadHistory = async () => {
     const [transactionResult, depositResult, withdrawalResult] = await Promise.all([
@@ -30,6 +31,12 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh }: FinanceModalP
     setDeposits(depositResult.deposits);
     setWithdrawals(withdrawalResult.withdrawals);
   };
+
+  useEffect(() => {
+    void apiRequest<{ settings: typeof financeSettings }>("/api/finance/settings")
+      .then((result) => setFinanceSettings(result.settings))
+      .catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load wallet settings."));
+  }, []);
 
   useEffect(() => {
     if (tab === "HISTORY") void loadHistory().catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load history."));
@@ -83,7 +90,7 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh }: FinanceModalP
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="finance-modal" role="dialog" aria-modal="true">
         <header>
-          <div><strong>Wallet</strong><span>Available {wallet.balance.toLocaleString()} PKR · Withdrawal lock {wallet.lockedBalance.toLocaleString()} PKR · Bet escrow {wallet.bettingLockedBalance.toLocaleString()} PKR</span></div>
+          <div><strong>Wallet</strong><span>Available {wallet.balance.toLocaleString()} PKR · Locked winnings {wallet.pendingRewards.toLocaleString()} PKR · Wager remaining {wallet.wagerRequirementRemaining.toLocaleString()} PKR</span></div>
           <button onClick={onClose}>×</button>
         </header>
         <nav>
@@ -94,19 +101,21 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh }: FinanceModalP
 
         {tab === "DEPOSIT" && (
           <form className="finance-form" onSubmit={submitDeposit}>
-            <label>Amount (PKR)<input type="number" min="100" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
+            <label>Amount (PKR)<input type="number" min={financeSettings.minDeposit} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
             <label>Payment method<select value={method} onChange={(event) => setMethod(event.target.value)}><option>Bank Transfer</option><option>JazzCash</option><option>EasyPaisa</option><option>USDT Manual</option></select></label>
             <label>Transaction/reference ID<input value={reference} onChange={(event) => setReference(event.target.value)} required /></label>
-            <button disabled={busy}>{busy ? "Submitting..." : "Submit deposit request"}</button>
+            <small className="finance-rule">Minimum deposit: {financeSettings.minDeposit.toLocaleString()} PKR. Approved deposits add a {financeSettings.wageringRequirementPercent}% wagering requirement.</small>
+            <button disabled={busy || !financeSettings.depositsEnabled}>{!financeSettings.depositsEnabled ? "Deposits disabled" : busy ? "Submitting..." : "Submit deposit request"}</button>
           </form>
         )}
 
         {tab === "WITHDRAW" && (
           <form className="finance-form" onSubmit={submitWithdrawal}>
-            <label>Amount (PKR)<input type="number" min="500" max={wallet.balance} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
+            <label>Amount (PKR)<input type="number" min={financeSettings.minWithdrawal} max={wallet.balance} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
             <label>Withdrawal method<select value={method} onChange={(event) => setMethod(event.target.value)}><option>Bank Transfer</option><option>JazzCash</option><option>EasyPaisa</option><option>USDT Manual</option></select></label>
             <label>Account details<textarea value={details} onChange={(event) => setDetails(event.target.value)} required rows={4} /></label>
-            <button disabled={busy}>{busy ? "Submitting..." : "Request withdrawal"}</button>
+            <small className="finance-rule">Minimum withdrawal: {financeSettings.minWithdrawal.toLocaleString()} PKR. Locked winnings become withdrawable after the wagering requirement reaches zero.</small>
+            <button disabled={busy || !financeSettings.withdrawalsEnabled}>{!financeSettings.withdrawalsEnabled ? "Withdrawals disabled" : busy ? "Submitting..." : "Request withdrawal"}</button>
           </form>
         )}
 

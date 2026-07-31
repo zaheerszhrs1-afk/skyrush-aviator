@@ -22,10 +22,11 @@ async function migrateMinorUnitFields(): Promise<void> {
       { withdrawalLockedMinor: { $exists: false } },
       { bettingLockedMinor: { $exists: false } },
       { pendingRewardsMinor: { $exists: false } },
+      { wagerRequirementMinor: { $exists: false } },
       { demoBalanceMinor: { $exists: false } },
       { authProvider: { $exists: false } }
     ]
-  }).select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor demoBalanceMinor authProvider role").lean();
+  }).select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor wagerRequirementMinor demoBalanceMinor authProvider role").lean();
 
   if (users.length > 0) {
     await UserModel.bulkWrite(users.map((user: any) => ({
@@ -39,6 +40,7 @@ async function migrateMinorUnitFields(): Promise<void> {
               : safeMinor(user.lockedBalance),
             bettingLockedMinor: Number.isSafeInteger(Number(user.bettingLockedMinor)) ? Number(user.bettingLockedMinor) : 0,
             pendingRewardsMinor: Number.isSafeInteger(Number(user.pendingRewardsMinor)) ? Number(user.pendingRewardsMinor) : 0,
+            wagerRequirementMinor: Number.isSafeInteger(Number(user.wagerRequirementMinor)) ? Number(user.wagerRequirementMinor) : 0,
             demoBalanceMinor: Number.isSafeInteger(Number(user.demoBalanceMinor))
               ? Number(user.demoBalanceMinor)
               : user.role === "ADMIN"
@@ -126,6 +128,23 @@ async function migrateMinorUnitFields(): Promise<void> {
 }
 
 
+async function migrateFinanceSettings(): Promise<void> {
+  await Promise.all([
+    PlatformSettingsModel.updateOne(
+      { key: "global", minDeposit: { $exists: false } },
+      { $set: { minDeposit: 100 } }
+    ),
+    PlatformSettingsModel.updateOne(
+      { key: "global", minWithdrawal: { $exists: false } },
+      { $set: { minWithdrawal: 500 } }
+    ),
+    PlatformSettingsModel.updateOne(
+      { key: "global", wageringRequirementPercent: { $exists: false } },
+      { $set: { wageringRequirementPercent: 30 } }
+    )
+  ]);
+}
+
 async function releaseStaleQueuedBetKeys(): Promise<void> {
   const staleQueuedDocuments = await GameBetModel.find({
     roundId: "__NEXT_ROUND__",
@@ -200,6 +219,7 @@ export async function connectDatabase(): Promise<void> {
   ]);
 
   await migrateSettingsVersion();
+  await migrateFinanceSettings();
   await migrateMinorUnitFields();
   await releaseStaleQueuedBetKeys();
   console.log(`MongoDB connected: ${mongoose.connection.name}`);

@@ -37,6 +37,7 @@ const emptyWallet: WalletSnapshot = {
   lockedBalance: 0,
   bettingLockedBalance: 0,
   pendingRewards: 0,
+  wagerRequirementRemaining: 0,
   totalBalance: 0,
   activeBets: {},
   queuedBets: {},

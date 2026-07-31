@@ -17,7 +17,8 @@ export type TransactionType =
   | "LOSS_POOL_CREDIT"
   | "POOL_PAYOUT"
   | "COMMISSION_CREDIT"
-  | "COMMISSION_DEBIT";
+  | "COMMISSION_DEBIT"
+  | "WAGER_REWARD_UNLOCK";
 
 export type PlatformAuditType =
   | "BET_ESCROW_LOCK"
@@ -45,6 +46,7 @@ const userSchema = new Schema(
     withdrawalLockedMinor: { type: Number, default: 0, min: 0 },
     bettingLockedMinor: { type: Number, default: 0, min: 0 },
     pendingRewardsMinor: { type: Number, default: 0, min: 0 },
+    wagerRequirementMinor: { type: Number, default: 0, min: 0 },
     demoBalanceMinor: { type: Number, default: 10_000_000, min: 0 },
 
     // Legacy PKR fields are retained during migration and mirrored for compatibility.
@@ -85,7 +87,8 @@ const walletTransactionSchema = new Schema(
         "LOSS_POOL_CREDIT",
         "POOL_PAYOUT",
         "COMMISSION_CREDIT",
-        "COMMISSION_DEBIT"
+        "COMMISSION_DEBIT",
+        "WAGER_REWARD_UNLOCK"
       ],
       required: true,
       index: true
@@ -159,6 +162,9 @@ const platformSettingsSchema = new Schema(
     commissionPercent: { type: Number, default: 10, min: 0, max: 50 },
     reservePercent: { type: Number, default: 0, min: 0, max: 95 },
     minBet: { type: Number, default: 16, min: 1 },
+    minDeposit: { type: Number, default: 100, min: 1 },
+    minWithdrawal: { type: Number, default: 500, min: 1 },
+    wageringRequirementPercent: { type: Number, default: 30, min: 0, max: 100 },
     maxBet: { type: Number, default: 100_000, min: 1 },
     maxCashoutMultiplier: { type: Number, default: 10, min: 1.01, max: 1000 },
     depositsEnabled: { type: Boolean, default: true },
@@ -228,6 +234,7 @@ const gameBetSchema = new Schema(
     reservedLiabilityMinor: { type: Number, required: true, default: 0 },
     payoutMinor: { type: Number, default: 0 },
     commissionMinor: { type: Number, default: 0 },
+    wagerContributionMinor: { type: Number, default: 0, min: 0 },
     amount: { type: Number, required: true },
     status: { type: String, enum: ["QUEUED", "ACTIVE", "CASHED_OUT", "LOST", "REFUNDED"], default: "ACTIVE", index: true },
     cashoutMultiplier: { type: Number },

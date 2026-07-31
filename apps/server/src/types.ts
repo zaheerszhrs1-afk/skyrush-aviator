@@ -42,6 +42,7 @@ export interface WalletSnapshot {
   lockedBalance: number;
   bettingLockedBalance: number;
   pendingRewards: number;
+  wagerRequirementRemaining: number;
   totalBalance: number;
   activeBets: Partial<Record<BetSlot, PublicBet>>;
   queuedBets: Partial<Record<BetSlot, PublicBet>>;

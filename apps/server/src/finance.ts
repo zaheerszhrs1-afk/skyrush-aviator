@@ -16,7 +16,8 @@ function walletFields(user: any) {
   const withdrawalLockedMinor = minorFromDocument(user, "withdrawalLockedMinor", "lockedBalance");
   const bettingLockedMinor = Number.isSafeInteger(Number(user?.bettingLockedMinor)) ? Number(user.bettingLockedMinor) : 0;
   const pendingRewardsMinor = Number.isSafeInteger(Number(user?.pendingRewardsMinor)) ? Number(user.pendingRewardsMinor) : 0;
-  return { balanceMinor, withdrawalLockedMinor, bettingLockedMinor, pendingRewardsMinor };
+  const wagerRequirementMinor = Number.isSafeInteger(Number(user?.wagerRequirementMinor)) ? Number(user.wagerRequirementMinor) : 0;
+  return { balanceMinor, withdrawalLockedMinor, bettingLockedMinor, pendingRewardsMinor, wagerRequirementMinor };
 }
 
 type WalletTransactionInputDocument = {
@@ -92,10 +93,11 @@ export async function getWalletSnapshot(userId: string): Promise<{
   lockedBalance: number;
   bettingLockedBalance: number;
   pendingRewards: number;
+  wagerRequirementRemaining: number;
   totalBalance: number;
 }> {
   const user = await UserModel.findById(userId)
-    .select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor")
+    .select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor wagerRequirementMinor")
     .lean();
   if (!user) throw new Error("User not found.");
   const wallet = walletFields(user);
@@ -104,6 +106,7 @@ export async function getWalletSnapshot(userId: string): Promise<{
     lockedBalance: fromMinor(wallet.withdrawalLockedMinor),
     bettingLockedBalance: fromMinor(wallet.bettingLockedMinor),
     pendingRewards: fromMinor(wallet.pendingRewardsMinor),
+    wagerRequirementRemaining: fromMinor(wallet.wagerRequirementMinor),
     totalBalance: fromMinor(
       wallet.balanceMinor + wallet.withdrawalLockedMinor + wallet.bettingLockedMinor + wallet.pendingRewardsMinor
     )
@@ -120,7 +123,8 @@ export async function createDepositRequest(input: {
   const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
   if (settings?.depositsEnabled === false) throw new Error("Deposits are currently disabled.");
   const amountMinor = toMinor(input.amount);
-  if (amountMinor < toMinor(100)) throw new Error("Minimum deposit is 100 PKR.");
+  const minDeposit = Number(settings?.minDeposit ?? 100);
+  if (amountMinor < toMinor(minDeposit)) throw new Error(`Minimum deposit is ${minDeposit.toFixed(2)} PKR.`);
   if (!input.method.trim() || !input.reference.trim()) throw new Error("Method and payment reference are required.");
 
   return DepositRequestModel.create({
@@ -142,7 +146,8 @@ export async function createWithdrawalRequest(input: {
   const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
   if (settings?.withdrawalsEnabled === false) throw new Error("Withdrawals are currently disabled.");
   const amountMinor = toMinor(input.amount);
-  if (amountMinor < toMinor(500)) throw new Error("Minimum withdrawal is 500 PKR.");
+  const minWithdrawal = Number(settings?.minWithdrawal ?? 500);
+  if (amountMinor < toMinor(minWithdrawal)) throw new Error(`Minimum withdrawal is ${minWithdrawal.toFixed(2)} PKR.`);
   if (!input.method.trim() || !input.accountDetails.trim()) throw new Error("Method and account details are required.");
 
   let created: any;
@@ -216,9 +221,19 @@ export async function reviewDeposit(input: {
       return;
     }
 
+    const settings = await PlatformSettingsModel.findOne({ key: "global" }).session(session).lean();
+    const wageringPercent = Math.min(100, Math.max(0, Number(settings?.wageringRequirementPercent ?? 30)));
+    const wagerRequirementMinor = Math.round(amountMinor * (wageringPercent / 100));
+
     const user = await UserModel.findByIdAndUpdate(
       deposit.userId,
-      { $inc: { balanceMinor: amountMinor, balance: fromMinor(amountMinor) } },
+      {
+        $inc: {
+          balanceMinor: amountMinor,
+          balance: fromMinor(amountMinor),
+          wagerRequirementMinor
+        }
+      },
       { new: true, session }
     );
     if (!user) throw new Error("Deposit user no longer exists.");
@@ -251,7 +266,8 @@ export async function reviewDeposit(input: {
         user,
         referenceType: "DEPOSIT",
         referenceId: String(deposit._id),
-        description: `Deposit approved via ${deposit.method}`
+        description: `Deposit approved via ${deposit.method}; wagering requirement ${fromMinor(wagerRequirementMinor).toFixed(2)} PKR`,
+        metadata: { wageringPercent, wagerRequirementMinor }
       })],
       { session }
     );
@@ -267,7 +283,8 @@ export async function reviewDeposit(input: {
         reservedLiquidityAfterMinor: Number((state as any).reservedRewardLiquidityMinor ?? 0),
         lossPoolAfterMinor: Number((state as any).lossPoolMinor ?? 0),
         commissionWalletAfterMinor: Number((state as any).commissionWalletMinor ?? 0),
-        description: `Approved deposit of ${fromMinor(amountMinor).toFixed(2)} PKR`
+        description: `Approved deposit of ${fromMinor(amountMinor).toFixed(2)} PKR with ${wageringPercent.toFixed(2)}% wagering requirement`,
+        metadata: { wageringPercent, wagerRequirementMinor }
       }],
       { session }
     );

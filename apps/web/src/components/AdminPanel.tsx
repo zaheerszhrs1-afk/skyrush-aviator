@@ -14,6 +14,7 @@ interface Summary {
   availableRewardLiquidity: number;
   lossPool: number;
   pendingRewards: number;
+  totalWagerRequirement: number;
   commissionWallet: number;
   totalCommissionEarned: number;
   totalRewardsPaid: number;
@@ -48,13 +49,37 @@ interface AdminSettings {
   commissionPercent: number;
   reservePercent: number;
   minBet: number;
+  minDeposit: number;
+  minWithdrawal: number;
+  wageringRequirementPercent: number;
   maxBet: number;
   maxCashoutMultiplier: number;
   depositsEnabled: boolean;
   withdrawalsEnabled: boolean;
 }
 
-type AdminTab = "OVERVIEW" | "USERS" | "DEPOSITS" | "WITHDRAWALS" | "AUDIT" | "SETTINGS";
+interface DailyBetRow {
+  date: string;
+  bets: number;
+  wonBets: number;
+  lostBets: number;
+  openBets: number;
+  betVolume: number;
+  payout: number;
+  playerLoss: number;
+  playerProfit: number;
+  commission: number;
+  netResult: number;
+}
+
+interface DailyBetReport {
+  days: number;
+  timezone: string;
+  totals: Omit<DailyBetRow, "date">;
+  rows: DailyBetRow[];
+}
+
+type AdminTab = "OVERVIEW" | "BETS" | "USERS" | "DEPOSITS" | "WITHDRAWALS" | "AUDIT" | "SETTINGS";
 
 interface AdminPanelProps {
   onBack: () => void;
@@ -65,6 +90,8 @@ const money = (value: number) => `${Number(value || 0).toLocaleString(undefined,
 export function AdminPanel({ onBack }: AdminPanelProps) {
   const [tab, setTab] = useState<AdminTab>("OVERVIEW");
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [betDays, setBetDays] = useState(30);
+  const [betReport, setBetReport] = useState<DailyBetReport | null>(null);
   const [users, setUsers] = useState<AuthUser[]>([]);
   const [deposits, setDeposits] = useState<DepositRequest[]>([]);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
@@ -75,9 +102,24 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
   const [busy, setBusy] = useState(false);
 
   const loadOverview = async () => setSummary((await apiRequest<{ summary: Summary }>("/api/admin/summary")).summary);
+  const loadBets = async () => setBetReport(await apiRequest<DailyBetReport>(`/api/admin/bets/daily?days=${betDays}`));
   const loadUsers = async () => setUsers((await apiRequest<{ users: AuthUser[] }>("/api/admin/users")).users);
-  const loadDeposits = async () => setDeposits((await apiRequest<{ deposits: DepositRequest[] }>("/api/admin/deposits")).deposits);
-  const loadWithdrawals = async () => setWithdrawals((await apiRequest<{ withdrawals: WithdrawalRequest[] }>("/api/admin/withdrawals")).withdrawals);
+  const loadDeposits = async () => {
+    const [depositResult, settingsResult] = await Promise.all([
+      apiRequest<{ deposits: DepositRequest[] }>("/api/admin/deposits"),
+      apiRequest<{ settings: AdminSettings }>("/api/admin/settings")
+    ]);
+    setDeposits(depositResult.deposits);
+    setSettings(settingsResult.settings);
+  };
+  const loadWithdrawals = async () => {
+    const [withdrawalResult, settingsResult] = await Promise.all([
+      apiRequest<{ withdrawals: WithdrawalRequest[] }>("/api/admin/withdrawals"),
+      apiRequest<{ settings: AdminSettings }>("/api/admin/settings")
+    ]);
+    setWithdrawals(withdrawalResult.withdrawals);
+    setSettings(settingsResult.settings);
+  };
   const loadAudit = async () => {
     const [auditResult, transactionResult] = await Promise.all([
       apiRequest<{ audit: PlatformAuditItem[] }>("/api/admin/audit?limit=300"),
@@ -92,6 +134,7 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
     setMessage("");
     const actions: Record<AdminTab, () => Promise<void>> = {
       OVERVIEW: loadOverview,
+      BETS: loadBets,
       USERS: loadUsers,
       DEPOSITS: loadDeposits,
       WITHDRAWALS: loadWithdrawals,
@@ -99,7 +142,7 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
       SETTINGS: loadSettings
     };
     void actions[tab]().catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load admin data."));
-  }, [tab]);
+  }, [tab, betDays]);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -123,7 +166,7 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
     <main className="admin-shell">
       <aside className="admin-sidebar">
         <div className="admin-title"><strong>SkyRush Admin</strong><span>Peer liquidity & operations</span></div>
-        {(["OVERVIEW", "USERS", "DEPOSITS", "WITHDRAWALS", "AUDIT", "SETTINGS"] as const).map((item) => (
+        {(["OVERVIEW", "BETS", "USERS", "DEPOSITS", "WITHDRAWALS", "AUDIT", "SETTINGS"] as const).map((item) => (
           <button className={tab === item ? "active" : ""} key={item} onClick={() => setTab(item)}>
             {item[0] + item.slice(1).toLowerCase()}
           </button>
@@ -156,7 +199,8 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
               <article><span>Commission wallet</span><strong className="positive">{money(summary.commissionWallet)}</strong></article>
               <article><span>Rewards paid</span><strong>{money(summary.totalRewardsPaid)}</strong></article>
               <article><span>Locked funds</span><strong>{money(summary.lockedFunds)}</strong></article>
-              <article><span>Pending rewards</span><strong>{money(summary.pendingRewards)}</strong></article>
+              <article><span>Locked winnings</span><strong>{money(summary.pendingRewards)}</strong></article>
+              <article><span>Wagering remaining</span><strong>{money(summary.totalWagerRequirement)}</strong></article>
               <article><span>Approved deposits</span><strong>{money(summary.totalApprovedDeposits)}</strong></article>
               <article><span>Completed withdrawals</span><strong>{money(summary.totalCompletedWithdrawals)}</strong></article>
               <article><span>Daily commission</span><strong className="positive">{money(summary.dailyRevenue)}</strong></article>
@@ -175,10 +219,51 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
           </>
         )}
 
+        {tab === "BETS" && betReport && (
+          <>
+            <div className="admin-report-toolbar">
+              <div>
+                <h2>Daily bet report</h2>
+                <p>Player loss means lost stakes. Player profit means net winnings above returned stake.</p>
+              </div>
+              <label>Range
+                <select value={betDays} onChange={(event) => setBetDays(Number(event.target.value))}>
+                  <option value={7}>Last 7 days</option>
+                  <option value={30}>Last 30 days</option>
+                  <option value={90}>Last 90 days</option>
+                  <option value={365}>Last 365 days</option>
+                </select>
+              </label>
+            </div>
+            <div className="admin-kpis admin-bet-kpis">
+              <article><span>Total bets</span><strong>{betReport.totals.bets.toLocaleString()}</strong></article>
+              <article><span>Bet volume</span><strong>{money(betReport.totals.betVolume)}</strong></article>
+              <article><span>Player losses</span><strong className="positive">{money(betReport.totals.playerLoss)}</strong></article>
+              <article><span>Player profit</span><strong className="negative">{money(betReport.totals.playerProfit)}</strong></article>
+              <article><span>Commission</span><strong className="positive">{money(betReport.totals.commission)}</strong></article>
+              <article><span>Net game result</span><strong className={betReport.totals.netResult >= 0 ? "positive" : "negative"}>{money(betReport.totals.netResult)}</strong></article>
+            </div>
+            <div className="admin-table-card">
+              <table><thead><tr><th>Date</th><th>Bets</th><th>Won / Lost / Open</th><th>Bet volume</th><th>Player loss</th><th>Player profit</th><th>Commission</th><th>Net result</th></tr></thead>
+                <tbody>{betReport.rows.length === 0 ? <tr><td colSpan={8}>No bets found in this period.</td></tr> : betReport.rows.map((row) => <tr key={row.date}>
+                  <td>{new Date(`${row.date}T00:00:00+05:00`).toLocaleDateString()}</td>
+                  <td>{row.bets.toLocaleString()}</td>
+                  <td>{row.wonBets} / {row.lostBets} / {row.openBets}</td>
+                  <td>{money(row.betVolume)}</td>
+                  <td className="positive">{money(row.playerLoss)}</td>
+                  <td className="negative">{money(row.playerProfit)}</td>
+                  <td>{money(row.commission)}</td>
+                  <td className={row.netResult >= 0 ? "positive" : "negative"}>{money(row.netResult)}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          </>
+        )}
+
         {tab === "USERS" && (
-          <div className="admin-table-card"><table><thead><tr><th>Name</th><th>Email</th><th>Available</th><th>Withdrawal lock</th><th>Bet escrow</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
+          <div className="admin-table-card"><table><thead><tr><th>Name</th><th>Email</th><th>Available</th><th>Withdrawal lock</th><th>Bet escrow</th><th>Locked winnings</th><th>Wager remaining</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
             <tbody>{users.map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.email}</td><td>{money(user.balance)}</td>
-              <td>{money(user.lockedBalance)}</td><td>{money(user.bettingLockedBalance)}</td><td>{money(user.totalBalance)}</td><td>{user.status}</td>
+              <td>{money(user.lockedBalance)}</td><td>{money(user.bettingLockedBalance)}</td><td>{money(user.pendingRewards)}</td><td>{money(user.wagerRequirementRemaining)}</td><td>{money(user.totalBalance)}</td><td>{user.status}</td>
               <td>{user.role === "USER" && <button disabled={busy} onClick={() => void run(async () => {
                 await apiRequest(`/api/admin/users/${user.id}`, { method: "PATCH", body: JSON.stringify({ status: user.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE" }) });
                 await loadUsers();
@@ -187,25 +272,45 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
         )}
 
         {tab === "DEPOSITS" && (
-          <div className="admin-table-card"><table><thead><tr><th>User</th><th>Amount</th><th>Method</th><th>Reference</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>{deposits.map((item) => <tr key={item._id}><td>{userName(item.userId)}</td><td>{money(item.amount)}</td><td>{item.method}</td><td>{item.reference}</td><td>{item.status}</td>
-              <td>{item.status === "PENDING" && <div className="admin-actions"><button disabled={busy} onClick={() => void run(async () => {
-                await apiRequest(`/api/admin/deposits/${item._id}`, { method: "PATCH", body: JSON.stringify({ action: "APPROVE" }) }); await loadDeposits();
-              })}>Approve</button><button className="danger" disabled={busy} onClick={() => void run(async () => {
-                await apiRequest(`/api/admin/deposits/${item._id}`, { method: "PATCH", body: JSON.stringify({ action: "REJECT" }) }); await loadDeposits();
-              })}>Reject</button></div>}</td></tr>)}</tbody>
-          </table></div>
+          <>
+            {settings && <div className="admin-inline-setting">
+              <div><strong>Minimum deposit</strong><span>This limit is validated for every new deposit request.</span></div>
+              <input type="number" min="1" step="0.01" value={settings.minDeposit} onChange={(event) => setSettings({ ...settings, minDeposit: Number(event.target.value) })} />
+              <button disabled={busy} onClick={() => void run(async () => {
+                await apiRequest("/api/admin/settings", { method: "PATCH", body: JSON.stringify(settings) });
+                await loadDeposits();
+              })}>Save minimum</button>
+            </div>}
+            <div className="admin-table-card"><table><thead><tr><th>User</th><th>Amount</th><th>Method</th><th>Reference</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody>{deposits.map((item) => <tr key={item._id}><td>{userName(item.userId)}</td><td>{money(item.amount)}</td><td>{item.method}</td><td>{item.reference}</td><td>{item.status}</td>
+                <td>{item.status === "PENDING" && <div className="admin-actions"><button disabled={busy} onClick={() => void run(async () => {
+                  await apiRequest(`/api/admin/deposits/${item._id}`, { method: "PATCH", body: JSON.stringify({ action: "APPROVE" }) }); await loadDeposits();
+                })}>Approve</button><button className="danger" disabled={busy} onClick={() => void run(async () => {
+                  await apiRequest(`/api/admin/deposits/${item._id}`, { method: "PATCH", body: JSON.stringify({ action: "REJECT" }) }); await loadDeposits();
+                })}>Reject</button></div>}</td></tr>)}</tbody>
+            </table></div>
+          </>
         )}
 
         {tab === "WITHDRAWALS" && (
-          <div className="admin-table-card"><table><thead><tr><th>User</th><th>Amount</th><th>Method</th><th>Details</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>{withdrawals.map((item) => <tr key={item._id}><td>{userName(item.userId)}</td><td>{money(item.amount)}</td><td>{item.method}</td><td className="wrap-cell">{item.accountDetails}</td><td>{item.status}</td>
-              <td>{!( ["COMPLETED", "REJECTED"] as string[]).includes(item.status) && <div className="admin-actions">
-                {item.status === "PENDING" && <button disabled={busy} onClick={() => void run(async () => { await apiRequest(`/api/admin/withdrawals/${item._id}`, { method: "PATCH", body: JSON.stringify({ action: "PROCESS" }) }); await loadWithdrawals(); })}>Process</button>}
-                <button disabled={busy} onClick={() => void run(async () => { await apiRequest(`/api/admin/withdrawals/${item._id}`, { method: "PATCH", body: JSON.stringify({ action: "COMPLETE" }) }); await loadWithdrawals(); })}>Complete</button>
-                <button className="danger" disabled={busy} onClick={() => void run(async () => { await apiRequest(`/api/admin/withdrawals/${item._id}`, { method: "PATCH", body: JSON.stringify({ action: "REJECT" }) }); await loadWithdrawals(); })}>Reject</button>
-              </div>}</td></tr>)}</tbody>
-          </table></div>
+          <>
+            {settings && <div className="admin-inline-setting">
+              <div><strong>Minimum withdrawal</strong><span>Only available balance can be withdrawn; locked winnings are excluded.</span></div>
+              <input type="number" min="1" step="0.01" value={settings.minWithdrawal} onChange={(event) => setSettings({ ...settings, minWithdrawal: Number(event.target.value) })} />
+              <button disabled={busy} onClick={() => void run(async () => {
+                await apiRequest("/api/admin/settings", { method: "PATCH", body: JSON.stringify(settings) });
+                await loadWithdrawals();
+              })}>Save minimum</button>
+            </div>}
+            <div className="admin-table-card"><table><thead><tr><th>User</th><th>Amount</th><th>Method</th><th>Details</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody>{withdrawals.map((item) => <tr key={item._id}><td>{userName(item.userId)}</td><td>{money(item.amount)}</td><td>{item.method}</td><td className="wrap-cell">{item.accountDetails}</td><td>{item.status}</td>
+                <td>{!( ["COMPLETED", "REJECTED"] as string[]).includes(item.status) && <div className="admin-actions">
+                  {item.status === "PENDING" && <button disabled={busy} onClick={() => void run(async () => { await apiRequest(`/api/admin/withdrawals/${item._id}`, { method: "PATCH", body: JSON.stringify({ action: "PROCESS" }) }); await loadWithdrawals(); })}>Process</button>}
+                  <button disabled={busy} onClick={() => void run(async () => { await apiRequest(`/api/admin/withdrawals/${item._id}`, { method: "PATCH", body: JSON.stringify({ action: "COMPLETE" }) }); await loadWithdrawals(); })}>Complete</button>
+                  <button className="danger" disabled={busy} onClick={() => void run(async () => { await apiRequest(`/api/admin/withdrawals/${item._id}`, { method: "PATCH", body: JSON.stringify({ action: "REJECT" }) }); await loadWithdrawals(); })}>Reject</button>
+                </div>}</td></tr>)}</tbody>
+            </table></div>
+          </>
         )}
 
         {tab === "AUDIT" && (
@@ -232,12 +337,15 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
               <label>Platform commission %<input type="number" min="0" max="50" step="0.01" value={settings.commissionPercent} onChange={(event) => setSettings({ ...settings, commissionPercent: Number(event.target.value) })} /><small>Deducted only from gross winner profit and credited to the commission wallet.</small></label>
               <label>Protected loss-pool reserve %<input type="number" min="0" max="95" step="0.01" value={settings.reservePercent} onChange={(event) => setSettings({ ...settings, reservePercent: Number(event.target.value) })} /><small>This portion of the loss pool cannot be reserved for new bets.</small></label>
               <label>Minimum bet<input type="number" min="1" step="0.01" value={settings.minBet} onChange={(event) => setSettings({ ...settings, minBet: Number(event.target.value) })} /></label>
+              <label>Minimum deposit<input type="number" min="1" step="0.01" value={settings.minDeposit} onChange={(event) => setSettings({ ...settings, minDeposit: Number(event.target.value) })} /></label>
+              <label>Minimum withdrawal<input type="number" min="1" step="0.01" value={settings.minWithdrawal} onChange={(event) => setSettings({ ...settings, minWithdrawal: Number(event.target.value) })} /></label>
+              <label>Deposit wagering requirement %<input type="number" min="0" max="100" step="0.01" value={settings.wageringRequirementPercent} onChange={(event) => setSettings({ ...settings, wageringRequirementPercent: Number(event.target.value) })} /><small>Example: 30% on a 5,000 PKR approved deposit requires 1,500 PKR of settled bets. Winnings remain locked until completed.</small></label>
               <label>Maximum bet<input type="number" min="1" step="0.01" value={settings.maxBet} onChange={(event) => setSettings({ ...settings, maxBet: Number(event.target.value) })} /></label>
               <label>Guaranteed maximum cash-out<input type="number" min="1.01" max="1000" step="0.01" value={settings.maxCashoutMultiplier} onChange={(event) => setSettings({ ...settings, maxCashoutMultiplier: Number(event.target.value) })} /><small>Every accepted bet reserves enough peer liquidity to pay up to this multiplier.</small></label>
               <label className="toggle-setting"><input type="checkbox" checked={settings.depositsEnabled} onChange={(event) => setSettings({ ...settings, depositsEnabled: event.target.checked })} /> Deposits enabled</label>
               <label className="toggle-setting"><input type="checkbox" checked={settings.withdrawalsEnabled} onChange={(event) => setSettings({ ...settings, withdrawalsEnabled: event.target.checked })} /> Withdrawals enabled</label>
             </div>
-            <div className="settings-warning">House bankroll editing has been removed. Winner profit is reserved from the peer loss pool before a bet is accepted, so the admin wallet is never used for payouts.</div>
+            <div className="settings-warning">Deposit wagering is added when an admin approves a deposit. Only net winnings are locked; the original stake returns to available balance. Settled wins and losses both count toward the requirement.</div>
             <button className="save-settings" disabled={busy}>{busy ? "Saving..." : "Save settings"}</button>
           </form>
         )}
