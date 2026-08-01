@@ -2088,3 +2088,10 @@ button { color: inherit; }
 .reward-type-badge{display:inline-flex;padding:4px 7px;border-radius:99px;background:#1b3142;color:#83c9ff;font-size:9px;font-weight:800}.reward-amount{color:#54e5a0}.empty-table-cell{padding:28px!important;color:#7f878f;text-align:center}
 .admin-user-kpis{grid-template-columns:minmax(220px,320px)}.admin-user-kpis article{border-color:#294638;background:linear-gradient(145deg,#14241c,#15171a)}.admin-user-kpis small{color:#75827b;font-size:10px}
 @media(max-width:560px){.admin-reward-history>header{align-items:stretch;flex-direction:column}.reward-today-total{align-items:flex-start}}
+
+/* Keep wallet controls fixed while long deposit and withdrawal forms scroll. */
+.finance-modal>.finance-form,
+.finance-modal>.finance-history{min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#3a414a transparent}
+.finance-modal>.finance-form{flex:1 1 auto}
+.finance-modal>.finance-history{flex:1 1 auto}
+@media(max-width:640px){.finance-modal>.finance-form{padding-bottom:28px}.finance-modal>.finance-form,.finance-modal>.finance-history{scrollbar-gutter:stable}}
