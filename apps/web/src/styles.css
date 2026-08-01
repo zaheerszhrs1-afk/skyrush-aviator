@@ -19,7 +19,8 @@ button { color: inherit; }
 .app-shell { min-height: 100vh; background: radial-gradient(circle at 50% 12%, #1a1d25 0, #0b0c0f 44%, #08090b 100%); }
 .topbar { height: 82px; display: flex; align-items: center; gap: 20px; padding: 0 24px; background: #1d1f28; border-bottom: 1px solid #20232b; }
 .back { border: 0; background: transparent; font-size: 44px; line-height: 1; cursor: pointer; }
-.brand { display: flex; align-items: center; flex: 0 0 auto; }
+.brand { display: flex; align-items: center; flex: 0 0 auto; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.brand:focus-visible { outline: 2px solid #55e46a; outline-offset: 3px; border-radius: 16px; }
 .brand-logo { display: block; width: 54px; height: 54px; object-fit: cover; border-radius: 14px; }
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 18px; }.top-actions button { border:0;background:none;color:#9da1aa;font-size:18px; }.profile { width: 42px;height:42px;border-radius:50%;display:grid;place-items:center;background:#174524;color:#8ad065;border:1px solid #245d34; }
 .game-title-row { height: 46px; display:flex; align-items:center; background:#17191b; border-bottom:1px solid #24272b; }
