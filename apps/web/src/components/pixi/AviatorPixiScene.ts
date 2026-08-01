@@ -238,9 +238,15 @@ export class AviatorPixiScene {
     this.curveHighlight.clear();
     this.plane.visible = true;
     this.plane.alpha = 0.78;
-    this.plane.position.set(Math.max(76, width * 0.08), height - Math.max(24, height * 0.04));
-    this.plane.rotation = -0.03 + Math.sin(this.elapsedAnimation / 600) * 0.012;
-    this.plane.scale.set(this.getPlaneScale(width, height) * 0.82);
+    const idleX = Math.max(76, width * 0.08) + Math.sin(this.elapsedAnimation / 900) * Math.max(1.5, width * 0.0018);
+    const idleY = height - Math.max(24, height * 0.04) + Math.sin(this.elapsedAnimation / 430) * Math.max(1.5, height * 0.004);
+    const idleScale = 0.82 + Math.sin(this.elapsedAnimation / 700) * 0.006;
+    this.plane.position.set(idleX, idleY);
+    this.plane.rotation =
+      -0.03 +
+      Math.sin(this.elapsedAnimation / 600) * 0.015 +
+      Math.sin(this.elapsedAnimation / 240) * 0.004;
+    this.plane.scale.set(this.getPlaneScale(width, height) * idleScale);
     this.spinPropeller(1.3);
 
     this.statusText.visible = false;
@@ -269,26 +275,37 @@ export class AviatorPixiScene {
     // network jitter, causing the visible value to drop after “FLEW AWAY!”.
     const visualMultiplier = Number(Math.max(1, this.round.multiplier).toFixed(2));
     const flightPoint = this.calculateFlightPoint(width, height, elapsed);
-    const planeY = flightPoint.y + Math.sin(this.elapsedAnimation / 230) * Math.max(1.5, height * 0.006);
-    const planeRotation = -0.055 + flightPoint.progress * -0.04 + Math.sin(this.elapsedAnimation / 420) * 0.012;
+    const planeX =
+      flightPoint.x +
+      Math.sin(this.elapsedAnimation / 680) * Math.max(1.25, width * 0.0018);
+    const planeY =
+      flightPoint.y +
+      Math.sin(this.elapsedAnimation / 210) * Math.max(2, height * 0.007) +
+      Math.sin(this.elapsedAnimation / 73) * Math.max(0.35, height * 0.0013);
+    const planeRotation =
+      -0.055 +
+      flightPoint.progress * -0.04 +
+      Math.sin(this.elapsedAnimation / 420) * 0.016 +
+      Math.sin(this.elapsedAnimation / 145) * 0.0035;
     const planeScale = this.getPlaneScale(width, height);
+    const animatedPlaneScale = planeScale * (1 + Math.sin(this.elapsedAnimation / 520) * 0.006);
     const tailPoint = this.calculatePlaneTailPoint(
-      flightPoint.x,
+      planeX,
       planeY,
       planeRotation,
-      planeScale,
+      animatedPlaneScale,
       flightPoint.progress
     );
 
-    this.lastFlightPoint = flightPoint;
+    this.lastFlightPoint = { x: planeX, y: planeY, progress: flightPoint.progress };
     this.drawFlightCurve(width, height, tailPoint);
     this.glow.alpha = clamp(0.28 + flightPoint.progress * 0.42, 0.28, 0.7);
 
     this.plane.visible = true;
     this.plane.alpha = 1;
-    this.plane.position.set(flightPoint.x, planeY);
+    this.plane.position.set(planeX, planeY);
     this.plane.rotation = planeRotation;
-    this.plane.scale.set(planeScale);
+    this.plane.scale.set(animatedPlaneScale);
     this.spinPropeller(2.4);
 
     this.statusText.visible = false;
@@ -316,12 +333,16 @@ export class AviatorPixiScene {
       const eased = easeOutCubic(flyProgress);
       this.plane.visible = true;
       this.plane.alpha = 1 - flyProgress;
+      const departureWobble = Math.sin(flyProgress * Math.PI * 4) * (1 - flyProgress);
       this.plane.position.set(
         this.lastFlightPoint.x + width * 0.5 * eased,
-        this.lastFlightPoint.y - height * 0.6 * eased
+        this.lastFlightPoint.y - height * 0.6 * eased + departureWobble * height * 0.018
       );
-      this.plane.rotation = -0.1 - eased * 0.24;
-      this.plane.scale.set(this.getPlaneScale(width, height) * (1 + eased * 0.12));
+      this.plane.rotation = -0.1 - eased * 0.24 + departureWobble * 0.035;
+      this.plane.scale.set(
+        this.getPlaneScale(width, height) *
+          (1 + eased * 0.12 + Math.sin(crashElapsed / 70) * 0.008 * (1 - flyProgress))
+      );
       this.spinPropeller(3.4);
     } else {
       this.plane.visible = false;
