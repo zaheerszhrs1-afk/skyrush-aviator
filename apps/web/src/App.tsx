@@ -77,6 +77,30 @@ export default function App() {
   };
 
   useEffect(() => {
+    const copyingIsAllowed = (target: EventTarget | null) =>
+      target instanceof Element &&
+      Boolean(
+        target.closest(
+          'input, textarea, select, [contenteditable="true"], [data-allow-copy="true"], .admin-shell'
+        )
+      );
+
+    const preventTextCopy = (event: Event) => {
+      if (!copyingIsAllowed(event.target)) event.preventDefault();
+    };
+
+    document.addEventListener("copy", preventTextCopy);
+    document.addEventListener("cut", preventTextCopy);
+    document.addEventListener("contextmenu", preventTextCopy);
+
+    return () => {
+      document.removeEventListener("copy", preventTextCopy);
+      document.removeEventListener("cut", preventTextCopy);
+      document.removeEventListener("contextmenu", preventTextCopy);
+    };
+  }, []);
+
+  useEffect(() => {
     void apiRequest<{ user: AuthUser }>("/api/auth/me")
       .then((result) => setUser(result.user))
       .catch(() => setUser(null))

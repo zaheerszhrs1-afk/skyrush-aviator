@@ -1,7 +1,6 @@
 import * as PIXI from "pixi.js";
 import type { RoundSnapshot } from "../../types";
 
-const FLIGHT_CURVE_RATE = 0.00006;
 const CRASH_SCREEN_MS = 3000;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -265,11 +264,10 @@ export class AviatorPixiScene {
 
   private renderRunning(width: number, height: number, now: number): void {
     const elapsed = this.round.startedAt ? Math.max(0, now - this.round.startedAt) : 0;
-    const liveMultiplier = Math.max(
-      this.round.multiplier,
-      this.round.startedAt ? Math.exp(elapsed * FLIGHT_CURVE_RATE) : this.round.multiplier
-    );
-    const visualMultiplier = Number(Math.max(1, liveMultiplier).toFixed(2));
+    // Display only the authoritative multiplier received from the server.
+    // Client-side extrapolation could run ahead of the real crash point during
+    // network jitter, causing the visible value to drop after “FLEW AWAY!”.
+    const visualMultiplier = Number(Math.max(1, this.round.multiplier).toFixed(2));
     const flightPoint = this.calculateFlightPoint(width, height, elapsed);
     const planeY = flightPoint.y + Math.sin(this.elapsedAnimation / 230) * Math.max(1.5, height * 0.006);
     const planeRotation = -0.055 + flightPoint.progress * -0.04 + Math.sin(this.elapsedAnimation / 420) * 0.012;

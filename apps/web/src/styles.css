@@ -1901,3 +1901,29 @@ button { color: inherit; }
     font-size: 12px;
   }
 }
+
+/* Disable user-facing website text selection/copy while preserving form and admin usability. */
+.app-shell,
+.app-shell *,
+.auth-page,
+.auth-page *,
+.app-loading {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.app-shell input,
+.app-shell textarea,
+.app-shell select,
+.app-shell [contenteditable="true"],
+.app-shell [data-allow-copy="true"],
+.auth-page input,
+.auth-page textarea,
+.auth-page select,
+.auth-page [contenteditable="true"],
+.auth-page [data-allow-copy="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
