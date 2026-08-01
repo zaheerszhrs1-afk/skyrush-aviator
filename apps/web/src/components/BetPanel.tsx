@@ -132,7 +132,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
       lastAutoPlaceRef.current = requestKey;
       handleAutoResult(result, "place");
     });
-  }, [accountMode, activeBet?.id, amount, autoBet, queuedBet?.id, realBettingPaused, roundState.phase, roundState.roundId, slot]);
+  }, [accountMode, activeBet?.id, amount, autoBet, queuedBet?.id, roundState.phase, roundState.roundId, slot]);
 
   const primaryAction = () => {
     if (actionPending) return;
