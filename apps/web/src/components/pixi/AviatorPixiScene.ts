@@ -2,6 +2,7 @@ import * as PIXI from "pixi.js";
 import type { RoundSnapshot } from "../../types";
 
 const CRASH_SCREEN_MS = 3000;
+const MULTIPLIER_GROWTH_PER_MS = 0.00006;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const easeOutCubic = (value: number) => 1 - Math.pow(1 - value, 3);
@@ -284,10 +285,14 @@ export class AviatorPixiScene {
     multiplier: number = this.round.multiplier
   ): void {
     const elapsed = startedAt ? Math.max(0, now - startedAt) : 0;
-    // Display only the authoritative multiplier received from the server.
-    // Client-side extrapolation could run ahead of the real crash point during
-    // network jitter, causing the visible value to drop after “FLEW AWAY!”.
-    const visualMultiplier = Number(Math.max(1, multiplier).toFixed(2));
+    // Bridge only the takeoff-to-first-advancing-tick gap from the same clock
+    // that moves the plane. Once the server multiplier rises above 1.00, the
+    // display immediately returns to authoritative values. This reuses the
+    // existing Pixi ticker and does not add React renders or another timer.
+    const takeoffMultiplier = startedAt && multiplier <= 1
+      ? Math.exp(elapsed * MULTIPLIER_GROWTH_PER_MS)
+      : multiplier;
+    const visualMultiplier = Number(Math.max(1, takeoffMultiplier).toFixed(2));
     const flightPoint = this.calculateFlightPoint(width, height, elapsed);
     const planeX =
       flightPoint.x +

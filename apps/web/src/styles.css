@@ -2008,6 +2008,32 @@ button { color: inherit; }
   .floating-support-mobile{right:10px;bottom:72px;width:46px;height:46px}
 }
 
+/* Keep the full desktop profile feature set usable on small screens. */
+.profile-center{min-height:0}
+.profile-content{flex:1;min-height:0}
+@media (max-width:900px) {
+  .profile-backdrop{align-items:stretch;padding:8px}
+  .profile-center{width:100%;height:calc(100dvh - 16px);max-height:none;border-radius:16px}
+  .profile-center-header{flex:0 0 auto;padding:14px;gap:10px}
+  .profile-center-header h2{max-width:48vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:18px}
+  .profile-center-header p{max-width:48vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
+  .profile-center-header>button{font-size:28px}
+  .profile-progress{flex:0 0 auto;padding:8px 14px}
+  .profile-tabs{flex:0 0 auto;padding:7px 8px;scrollbar-width:thin}
+  .profile-tabs button{padding:9px 11px;font-size:11px}
+  .profile-content{padding:14px;overflow-y:auto;overscroll-behavior:contain}
+  .profile-form-grid{grid-template-columns:1fr;gap:12px}
+  .profile-form-grid .wide{grid-column:auto}
+  .profile-primary{width:100%;justify-self:stretch}
+  .profile-security{max-width:none;gap:12px}
+  .session-list article{align-items:stretch;flex-direction:column;gap:10px}
+  .session-list article>div{min-width:0}
+  .session-list button{width:100%}
+  .report-center{grid-template-columns:1fr;gap:12px}
+  .report-form{padding:13px}
+  .report-history article header{align-items:flex-start}
+}
+
 .bonus-detail-settings{display:grid;gap:14px;margin-top:16px;padding:18px;border:1px solid #2c3238;border-radius:16px;background:#121518}
 .bonus-detail-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
 .bonus-detail-heading>div{min-width:0}.bonus-detail-heading span{color:#6ebfff;font-size:9px;font-weight:900;letter-spacing:.13em}.bonus-detail-heading h2{margin:5px 0}.bonus-detail-heading p,.bonus-settings-section header p{margin:4px 0;color:#858d97;font-size:11px;line-height:1.45}
