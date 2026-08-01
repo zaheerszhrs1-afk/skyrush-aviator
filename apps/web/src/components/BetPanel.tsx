@@ -132,7 +132,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
       lastAutoPlaceRef.current = requestKey;
       handleAutoResult(result, "place");
     });
-  }, [accountMode, activeBet?.id, amount, autoBet, queuedBet?.id, roundState.phase, roundState.roundId, slot]);
+  }, [accountMode, activeBet?.id, amount, autoBet, queuedBet?.id, realBettingPaused, roundState.phase, roundState.roundId, slot]);
 
   const primaryAction = () => {
     if (actionPending) return;
@@ -156,7 +156,8 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
   };
 
   const prefix = accountMode === "DEMO" ? "Demo " : "";
-  const buttonTitle = actionPending === "cashout"
+  const buttonTitle =
+    actionPending === "cashout"
     ? `${prefix}Cashing Out...`
     : actionPending === "place"
       ? `${prefix}Placing...`
@@ -168,7 +169,8 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
         ? `${prefix}Bet placed`
         : `${prefix}Bet`;
 
-  const buttonValue = activeBet && roundState.phase === "RUNNING"
+  const buttonValue =
+    activeBet && roundState.phase === "RUNNING"
     ? `${estimatedCashout.toFixed(2)} PKR`
     : queuedBet
       ? `${queuedBet.amount.toFixed(2)} PKR — Next round`

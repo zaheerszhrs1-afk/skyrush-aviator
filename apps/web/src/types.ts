@@ -1,7 +1,8 @@
 export type RoundPhase = "WAITING" | "RUNNING" | "CRASHED";
 export type BetSlot = "left" | "right";
 export type AccountMode = "REAL" | "DEMO";
-export type UserRole = "USER" | "ADMIN";
+export type UserRole = "USER" | "ADMIN" | "SUB_ADMIN";
+export type AdminPermission = "OVERVIEW" | "BETS" | "BONUSES" | "USERS" | "DEPOSITS" | "WITHDRAWALS" | "AUDIT" | "SETTINGS" | "SUPPORT" | "CONTENT" | "TEAM" | "REPORTS" | "FAQS" | "NOTIFICATIONS" | "GAME_CONTROL";
 export type AuthProvider = "PASSWORD" | "GOOGLE" | "HYBRID";
 
 export interface PublicBet {
@@ -61,6 +62,7 @@ export interface RoundSnapshot {
   activeBetEscrow: number;
   reservedRewardLiquidity: number;
   availableRewardLiquidity: number;
+  testMode?: boolean;
 }
 
 export interface RoundTick {
@@ -95,6 +97,15 @@ export interface AuthUser {
   status: "ACTIVE" | "SUSPENDED";
   authProvider: AuthProvider;
   avatarUrl: string;
+  phone: string;
+  country: string;
+  language: string;
+  timezone: string;
+  bio: string;
+  marketingOptIn: boolean;
+  gameNotifications: boolean;
+  supportNotifications: boolean;
+  adminPermissions: AdminPermission[];
   balance: number;
   lockedBalance: number;
   bettingLockedBalance: number;

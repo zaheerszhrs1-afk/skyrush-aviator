@@ -1,6 +1,22 @@
 import { Schema, model } from "mongoose";
 
-export type UserRole = "USER" | "ADMIN";
+export type UserRole = "USER" | "ADMIN" | "SUB_ADMIN";
+export type AdminPermission =
+  | "OVERVIEW"
+  | "BETS"
+  | "BONUSES"
+  | "USERS"
+  | "DEPOSITS"
+  | "WITHDRAWALS"
+  | "AUDIT"
+  | "SETTINGS"
+  | "SUPPORT"
+  | "CONTENT"
+  | "TEAM"
+  | "REPORTS"
+  | "FAQS"
+  | "NOTIFICATIONS"
+  | "GAME_CONTROL";
 export type UserStatus = "ACTIVE" | "SUSPENDED";
 export type AuthProvider = "PASSWORD" | "GOOGLE" | "HYBRID";
 export type TransactionType =
@@ -41,7 +57,16 @@ const userSchema = new Schema(
     authProvider: { type: String, enum: ["PASSWORD", "GOOGLE", "HYBRID"], default: "PASSWORD" },
     googleSub: { type: String, unique: true, sparse: true, index: true, select: false },
     avatarUrl: { type: String, default: "", maxlength: 500 },
-    role: { type: String, enum: ["USER", "ADMIN"], default: "USER", index: true },
+    phone: { type: String, default: "", maxlength: 40 },
+    country: { type: String, default: "Pakistan", maxlength: 80 },
+    language: { type: String, default: "English", maxlength: 40 },
+    timezone: { type: String, default: "Asia/Karachi", maxlength: 80 },
+    bio: { type: String, default: "", maxlength: 240 },
+    marketingOptIn: { type: Boolean, default: true },
+    gameNotifications: { type: Boolean, default: true },
+    supportNotifications: { type: Boolean, default: true },
+    adminPermissions: { type: [String], default: [] },
+    role: { type: String, enum: ["USER", "ADMIN", "SUB_ADMIN"], default: "USER", index: true },
     status: { type: String, enum: ["ACTIVE", "SUSPENDED"], default: "ACTIVE", index: true },
 
     // Integer minor units (paisa) are the accounting source of truth.
@@ -215,6 +240,10 @@ const platformSettingsSchema = new Schema(
     monthlyClaimForceOpen: { type: Boolean, default: false },
     vipLevels: { type: [vipLevelRuleSchema], default: [] },
     monthlyBonusRules: { type: [monthlyBonusRuleSchema], default: [] },
+    testModeEnabled: { type: Boolean, default: false },
+    testCrashMultiplier: { type: Number, default: 2, min: 1, max: 1000 },
+    whatsappNumber: { type: String, default: "", maxlength: 32 },
+    whatsappMessage: { type: String, default: "Hello, I need support with my B9T9 account.", maxlength: 250 },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User" }
   },
   { timestamps: true, versionKey: false }
@@ -379,6 +408,122 @@ const bonusClaimSchema = new Schema(
 bonusClaimSchema.index({ userId: 1, createdAt: -1 });
 bonusClaimSchema.index({ type: 1, createdAt: -1 });
 
+
+
+const passwordResetTokenSchema = new Schema(
+  {
+    tokenHash: { type: String, required: true, unique: true, index: true },
+    userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    expiresAt: { type: Date, required: true, index: { expires: 0 } },
+    usedAt: { type: Date }
+  },
+  { timestamps: true, versionKey: false }
+);
+
+const supportConversationSchema = new Schema(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: "User", required: true, unique: true, index: true },
+    status: { type: String, enum: ["OPEN", "CLOSED"], default: "OPEN", index: true },
+    subject: { type: String, default: "General support", maxlength: 120 },
+    assignedAdminId: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    lastMessageAt: { type: Date, default: Date.now, index: true },
+    unreadForUser: { type: Number, default: 0, min: 0 },
+    unreadForAdmin: { type: Number, default: 0, min: 0 }
+  },
+  { timestamps: true, versionKey: false }
+);
+
+const supportMessageSchema = new Schema(
+  {
+    conversationId: { type: Schema.Types.ObjectId, ref: "SupportConversation", required: true, index: true },
+    senderId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    senderRole: { type: String, enum: ["USER", "ADMIN", "SUB_ADMIN"], required: true },
+    message: { type: String, required: true, trim: true, maxlength: 1200 },
+    readAt: { type: Date }
+  },
+  { timestamps: true, versionKey: false }
+);
+supportMessageSchema.index({ conversationId: 1, createdAt: 1 });
+
+const contentCampaignSchema = new Schema(
+  {
+    type: { type: String, enum: ["POPUP", "BANNER", "ANNOUNCEMENT", "NEWS"], required: true, index: true },
+    title: { type: String, required: true, trim: true, maxlength: 120 },
+    body: { type: String, default: "", maxlength: 2000 },
+    imageUrl: { type: String, default: "", maxlength: 700 },
+    linkUrl: { type: String, default: "", maxlength: 700 },
+    linkLabel: { type: String, default: "Learn more", maxlength: 60 },
+    placement: { type: String, enum: ["LOGIN", "GAME", "BOTH"], default: "GAME", index: true },
+    enabled: { type: Boolean, default: true, index: true },
+    dismissible: { type: Boolean, default: true },
+    priority: { type: Number, default: 0, min: -1000, max: 1000 },
+    startsAt: { type: Date },
+    endsAt: { type: Date },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    updatedBy: { type: Schema.Types.ObjectId, ref: "User" }
+  },
+  { timestamps: true, versionKey: false }
+);
+contentCampaignSchema.index({ enabled: 1, type: 1, priority: -1, createdAt: -1 });
+
+const faqSchema = new Schema(
+  {
+    question: { type: String, required: true, trim: true, maxlength: 240 },
+    answer: { type: String, required: true, trim: true, maxlength: 4000 },
+    category: { type: String, default: "General", maxlength: 80, index: true },
+    enabled: { type: Boolean, default: true, index: true },
+    sortOrder: { type: Number, default: 0 },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    updatedBy: { type: Schema.Types.ObjectId, ref: "User" }
+  },
+  { timestamps: true, versionKey: false }
+);
+faqSchema.index({ enabled: 1, sortOrder: 1, createdAt: 1 });
+
+const userReportSchema = new Schema(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    category: { type: String, enum: ["ACCOUNT", "PAYMENT", "GAME", "SECURITY", "OTHER"], default: "OTHER", index: true },
+    subject: { type: String, required: true, trim: true, maxlength: 160 },
+    description: { type: String, required: true, trim: true, maxlength: 3000 },
+    status: { type: String, enum: ["OPEN", "IN_REVIEW", "RESOLVED", "REJECTED"], default: "OPEN", index: true },
+    adminNote: { type: String, default: "", maxlength: 2000 },
+    reviewedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    reviewedAt: { type: Date }
+  },
+  { timestamps: true, versionKey: false }
+);
+userReportSchema.index({ status: 1, createdAt: -1 });
+
+const notificationCampaignSchema = new Schema(
+  {
+    title: { type: String, required: true, trim: true, maxlength: 120 },
+    body: { type: String, required: true, trim: true, maxlength: 1200 },
+    targetType: { type: String, enum: ["ALL", "SELECTED"], default: "ALL" },
+    userIds: { type: [Schema.Types.ObjectId], default: [] },
+    status: { type: String, enum: ["DRAFT", "SCHEDULED", "SENDING", "SENT", "CANCELLED"], default: "DRAFT", index: true },
+    scheduledAt: { type: Date, index: true },
+    sentAt: { type: Date },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    sentBy: { type: Schema.Types.ObjectId, ref: "User" }
+  },
+  { timestamps: true, versionKey: false }
+);
+notificationCampaignSchema.index({ status: 1, scheduledAt: 1 });
+
+const userNotificationSchema = new Schema(
+  {
+    campaignId: { type: Schema.Types.ObjectId, ref: "NotificationCampaign", required: true, index: true },
+    userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    title: { type: String, required: true },
+    body: { type: String, required: true },
+    readAt: { type: Date }
+  },
+  { timestamps: true, versionKey: false }
+);
+userNotificationSchema.index({ userId: 1, createdAt: -1 });
+userNotificationSchema.index({ campaignId: 1, userId: 1 }, { unique: true });
+
 const chatMessageSchema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
@@ -402,3 +547,12 @@ export const DemoBetModel = model("DemoBet", demoBetSchema);
 export const PlatformAuditModel = model("PlatformAudit", platformAuditSchema);
 export const BonusClaimModel = model("BonusClaim", bonusClaimSchema);
 export const ChatMessageModel = model("ChatMessage", chatMessageSchema);
+export const PasswordResetTokenModel = model("PasswordResetToken", passwordResetTokenSchema);
+export const SupportConversationModel = model("SupportConversation", supportConversationSchema);
+export const SupportMessageModel = model("SupportMessage", supportMessageSchema);
+export const ContentCampaignModel = model("ContentCampaign", contentCampaignSchema);
+export const FaqModel = model("Faq", faqSchema);
+export const UserReportModel = model("UserReport", userReportSchema);
+export const NotificationCampaignModel = model("NotificationCampaign", notificationCampaignSchema);
+export const UserNotificationModel = model("UserNotification", userNotificationSchema);
+

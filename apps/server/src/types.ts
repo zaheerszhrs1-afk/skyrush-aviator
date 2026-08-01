@@ -41,6 +41,7 @@ export interface RoundSnapshot {
   activeBetEscrow: number;
   reservedRewardLiquidity: number;
   availableRewardLiquidity: number;
+  testMode?: boolean;
 }
 
 export interface RoundTick {

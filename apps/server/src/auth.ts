@@ -1,7 +1,7 @@
 import * as crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { promisify } from "node:util";
-import { AuthSessionModel, UserModel, type AuthProvider, type UserRole } from "./models.js";
+import { AuthSessionModel, UserModel, type AdminPermission, type AuthProvider, type UserRole } from "./models.js";
 import { fromMinor, minorFromDocument } from "./money.js";
 
 const scryptAsync = promisify(crypto.scrypt);
@@ -25,6 +25,15 @@ export interface AuthUser {
   demoBalance: number;
   authProvider: AuthProvider;
   avatarUrl: string;
+  phone: string;
+  country: string;
+  language: string;
+  timezone: string;
+  bio: string;
+  marketingOptIn: boolean;
+  gameNotifications: boolean;
+  supportNotifications: boolean;
+  adminPermissions: AdminPermission[];
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -100,7 +109,16 @@ export function publicUser(document: any): AuthUser {
     totalBalance: fromMinor(balanceMinor + withdrawalLockedMinor + bettingLockedMinor + pendingRewardsMinor),
     demoBalance: fromMinor(demoBalanceMinor),
     authProvider: (document.authProvider ?? "PASSWORD") as AuthProvider,
-    avatarUrl: String(document.avatarUrl ?? "")
+    avatarUrl: String(document.avatarUrl ?? ""),
+    phone: String(document.phone ?? ""),
+    country: String(document.country ?? "Pakistan"),
+    language: String(document.language ?? "English"),
+    timezone: String(document.timezone ?? "Asia/Karachi"),
+    bio: String(document.bio ?? ""),
+    marketingOptIn: document.marketingOptIn !== false,
+    gameNotifications: document.gameNotifications !== false,
+    supportNotifications: document.supportNotifications !== false,
+    adminPermissions: Array.isArray(document.adminPermissions) ? document.adminPermissions as AdminPermission[] : []
   };
 }
 
@@ -169,13 +187,53 @@ export function requireAuth(request: AuthenticatedRequest, response: Response, n
   next();
 }
 
+const permissionForPath = (path: string): AdminPermission => {
+  if (path.includes("/bets")) return "BETS";
+  if (path.includes("/bonuses")) return "BONUSES";
+  if (path.includes("/users")) return "USERS";
+  if (path.includes("/deposits")) return "DEPOSITS";
+  if (path.includes("/withdrawals")) return "WITHDRAWALS";
+  if (path.includes("/audit") || path.includes("/transactions")) return "AUDIT";
+  if (path.includes("/settings")) return "SETTINGS";
+  if (path.includes("/support")) return "SUPPORT";
+  if (path.includes("/content")) return "CONTENT";
+  if (path.includes("/subadmins")) return "TEAM";
+  if (path.includes("/reports")) return "REPORTS";
+  if (path.includes("/faqs")) return "FAQS";
+  if (path.includes("/notifications")) return "NOTIFICATIONS";
+  if (path.includes("/game-control")) return "GAME_CONTROL";
+  return "OVERVIEW";
+};
+
 export function requireAdmin(request: AuthenticatedRequest, response: Response, next: NextFunction): void {
-  if (!request.authUser || request.authUser.role !== "ADMIN") {
+  const admin = request.authUser;
+  if (!admin || !["ADMIN", "SUB_ADMIN"].includes(admin.role)) {
     response.status(403).json({ ok: false, message: "Administrator access required." });
     return;
   }
+  if (admin.role === "SUB_ADMIN") {
+    const permission = permissionForPath(request.originalUrl || request.path);
+    if (!admin.adminPermissions.includes(permission)) {
+      response.status(403).json({ ok: false, message: `Access to ${permission.toLowerCase().replaceAll("_", " ")} is not permitted.` });
+      return;
+    }
+  }
   next();
 }
+
+export const requireAdminPermission = (permission: AdminPermission) =>
+  (request: AuthenticatedRequest, response: Response, next: NextFunction): void => {
+    const admin = request.authUser;
+    if (!admin || !["ADMIN", "SUB_ADMIN"].includes(admin.role)) {
+      response.status(403).json({ ok: false, message: "Administrator access required." });
+      return;
+    }
+    if (admin.role === "SUB_ADMIN" && !admin.adminPermissions.includes(permission)) {
+      response.status(403).json({ ok: false, message: `Access to ${permission.toLowerCase().replaceAll("_", " ")} is not permitted.` });
+      return;
+    }
+    next();
+  };
 
 export async function bootstrapAdmin(): Promise<void> {
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();

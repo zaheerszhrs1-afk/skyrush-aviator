@@ -8,6 +8,7 @@ import mongoose from "mongoose";
 import { Server } from "socket.io";
 import { OAuth2Client } from "google-auth-library";
 import { GameEngine } from "./game-engine.js";
+import { registerPlatformFeatures } from "./platform-features.js";
 import { reconcile } from "./accounting.js";
 import { fromMinor, toMinor } from "./money.js";
 import type { AccountMode, BetSlot } from "./types.js";
@@ -143,8 +144,8 @@ app.post("/api/auth/google", asyncRoute(async (request, response) => {
   }
 
   let user = await UserModel.findOne({ $or: [{ googleSub }, { email }] }).select("+googleSub");
-  if (user?.role === "ADMIN") {
-    response.status(403).json({ ok: false, message: "Administrators must use email and password login." });
+  if (user && ["ADMIN", "SUB_ADMIN"].includes(String(user.role))) {
+    response.status(403).json({ ok: false, message: "Administrators must use the separate admin login." });
     return;
   }
   if (user && user.googleSub && String(user.googleSub) !== googleSub) {
@@ -198,6 +199,10 @@ app.post("/api/auth/login", asyncRoute(async (request, response) => {
     response.status(401).json({ ok: false, message: "Invalid email or password." });
     return;
   }
+  if (["ADMIN", "SUB_ADMIN"].includes(String(user.role))) {
+    response.status(403).json({ ok: false, message: "Administrator accounts must use the separate admin login." });
+    return;
+  }
   if (user.status !== "ACTIVE") {
     response.status(403).json({ ok: false, message: "This account is suspended." });
     return;
@@ -234,6 +239,7 @@ const io = new Server(server, {
 
 const engine = new GameEngine(io);
 await engine.initialize();
+const stopPlatformFeatures = registerPlatformFeatures(app, io, engine);
 
 app.get("/api/wallet", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
   response.json({ ok: true, wallet: await engine.getWallet(request.authUser!.id) });
@@ -538,7 +544,7 @@ app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response
 app.get("/api/admin/bets/daily", requireAdmin, asyncRoute(async (request, response) => {
   const requestedDays = Number(request.query.days ?? 30);
   const days = Number.isFinite(requestedDays)
-    ? Math.min(365, Math.max(7, Math.floor(requestedDays)))
+    ? Math.min(365, Math.max(1, Math.floor(requestedDays)))
     : 30;
   const karachiOffsetMs = 5 * 60 * 60 * 1000;
   const karachiNow = new Date(Date.now() + karachiOffsetMs);
@@ -607,7 +613,7 @@ app.get("/api/admin/bets/daily", requireAdmin, asyncRoute(async (request, respon
     { $sort: { _id: -1 } }
   ]);
 
-  const rows = daily.map((item: any): {
+  type DailyBetRow = {
     date: string;
     bets: number;
     wonBets: number;
@@ -619,7 +625,9 @@ app.get("/api/admin/bets/daily", requireAdmin, asyncRoute(async (request, respon
     playerProfit: number;
     commission: number;
     netResult: number;
-  } => {
+  };
+
+  const rows: DailyBetRow[] = daily.map((item: any): DailyBetRow => {
     const playerLossMinor = Number(item.playerLossMinor ?? 0);
     const playerProfitMinor = Number(item.playerProfitMinor ?? 0);
     return {
@@ -637,8 +645,8 @@ app.get("/api/admin/bets/daily", requireAdmin, asyncRoute(async (request, respon
     };
   });
 
-  const rowsByDate = new Map(rows.map((row) => [row.date, row]));
-  const completeRows = Array.from({ length: days }, (_, index) => {
+  const rowsByDate = new Map<string, DailyBetRow>(rows.map((row) => [row.date, row]));
+  const completeRows: DailyBetRow[] = Array.from({ length: days }, (_, index): DailyBetRow => {
     const date = new Date(Date.UTC(
       karachiNow.getUTCFullYear(),
       karachiNow.getUTCMonth(),
@@ -1011,6 +1019,7 @@ server.listen(port, "0.0.0.0", () => {
 });
 
 const shutdown = async () => {
+  stopPlatformFeatures();
   engine.stop();
   server.close(async () => {
     await disconnectDatabase();

@@ -37,6 +37,8 @@ interface RuntimeSettings {
   minBet: number;
   maxBet: number;
   maxCashoutMultiplier: number;
+  testModeEnabled: boolean;
+  testCrashMultiplier: number;
 }
 
 const defaultSettings: RuntimeSettings = {
@@ -45,7 +47,9 @@ const defaultSettings: RuntimeSettings = {
   reservePercent: 0,
   minBet: 16,
   maxBet: 100_000,
-  maxCashoutMultiplier: 10
+  maxCashoutMultiplier: 10,
+  testModeEnabled: false,
+  testCrashMultiplier: 2
 };
 
 type WalletTransactionInputDocument = {
@@ -241,7 +245,8 @@ export class GameEngine {
       commissionPercent: this.settings.commissionPercent,
       activeBetEscrow: fromMinor(this.cachedActiveBetEscrowMinor),
       reservedRewardLiquidity: fromMinor(this.cachedReservedLiquidityMinor),
-      availableRewardLiquidity: fromMinor(availableRewardLiquidityMinor)
+      availableRewardLiquidity: fromMinor(availableRewardLiquidityMinor),
+      testMode: this.settings.testModeEnabled
     };
   }
 
@@ -905,7 +910,9 @@ export class GameEngine {
     const pendingLiabilityMinor = [...this.queuedBets.values()]
       .flatMap((slots) => Object.values(slots))
       .reduce((sum, bet) => sum + calculateMaximumLiability(toMinor(bet.amount), this.settings.maxCashoutMultiplier), 0);
-    this.crashPoint = availablePoolMinor < pendingLiabilityMinor ? 1.00 : naturalCrash;
+    this.crashPoint = this.settings.testModeEnabled
+      ? Math.min(this.settings.maxCashoutMultiplier, Math.max(1, Number(this.settings.testCrashMultiplier.toFixed(2))))
+      : availablePoolMinor < pendingLiabilityMinor ? 1.00 : naturalCrash;
     this.multiplier = 1;
     this.startedAt = null;
     this.phaseEndsAt = Date.now() + WAITING_MS;
@@ -1381,7 +1388,49 @@ export class GameEngine {
       reservePercent: Number(settings?.reservePercent ?? defaultSettings.reservePercent),
       minBet: Number(settings?.minBet ?? defaultSettings.minBet),
       maxBet: Number(settings?.maxBet ?? defaultSettings.maxBet),
-      maxCashoutMultiplier: Number(settings?.maxCashoutMultiplier ?? defaultSettings.maxCashoutMultiplier)
+      maxCashoutMultiplier: Number(settings?.maxCashoutMultiplier ?? defaultSettings.maxCashoutMultiplier),
+      testModeEnabled: Boolean((settings as any)?.testModeEnabled ?? defaultSettings.testModeEnabled),
+      testCrashMultiplier: Number((settings as any)?.testCrashMultiplier ?? defaultSettings.testCrashMultiplier)
+    };
+  }
+
+  getAdminControlState(): { planeOverrideEnabled: boolean; overrideCrashMultiplier: number; phase: string; multiplier: number; hasActiveBets: boolean } {
+    return {
+      planeOverrideEnabled: this.settings.testModeEnabled,
+      overrideCrashMultiplier: this.settings.testCrashMultiplier,
+      phase: this.phase,
+      multiplier: this.multiplier,
+      hasActiveBets: this.bets.some((bet) => bet.status === "ACTIVE") || this.activeBets.size > 0 || this.queuedBets.size > 0
+    };
+  }
+
+  async updateAdminControl(input: { enabled?: boolean; crashMultiplier?: number; forceCrash?: boolean }): Promise<{ ok: boolean; message: string }> {
+    const inMemoryRealBets = this.bets.some((bet) => bet.status === "ACTIVE") || this.activeBets.size > 0 || this.queuedBets.size > 0;
+    if (input.crashMultiplier !== undefined && (!Number.isFinite(input.crashMultiplier) || input.crashMultiplier < 1 || input.crashMultiplier > 1000)) {
+      return { ok: false, message: "Crash multiplier must be between 1.00x and 1000.00x." };
+    }
+
+    if (input.enabled !== undefined) this.settings.testModeEnabled = input.enabled;
+    if (input.crashMultiplier !== undefined) this.settings.testCrashMultiplier = Number(input.crashMultiplier.toFixed(2));
+
+    await PlatformSettingsModel.findOneAndUpdate(
+      { key: "global" },
+      { $set: { testModeEnabled: this.settings.testModeEnabled, testCrashMultiplier: this.settings.testCrashMultiplier } },
+      { upsert: true, new: true }
+    );
+
+    if (input.forceCrash) {
+      if (!this.settings.testModeEnabled) return { ok: false, message: "Enable plane override before forcing a crash." };
+      if (this.phase !== "RUNNING") return { ok: false, message: "The plane can only be stopped while a round is running." };
+      this.crashPoint = Math.max(1, Number(this.multiplier.toFixed(2)));
+      return { ok: true, message: `Plane will crash at ${this.crashPoint.toFixed(2)}x.` };
+    }
+
+    return {
+      ok: true,
+      message: this.settings.testModeEnabled
+        ? `Plane override enabled. Next round target is ${this.settings.testCrashMultiplier.toFixed(2)}x.`
+        : "Plane override disabled. Provably-fair crash outcomes restored."
     };
   }
 
