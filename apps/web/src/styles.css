@@ -2095,3 +2095,12 @@ button { color: inherit; }
 .finance-modal>.finance-form{flex:1 1 auto}
 .finance-modal>.finance-history{flex:1 1 auto}
 @media(max-width:640px){.finance-modal>.finance-form{padding-bottom:28px}.finance-modal>.finance-form,.finance-modal>.finance-history{scrollbar-gutter:stable}}
+
+/* Keep the desktop game viewport fixed; scrolling belongs to its inner panels. */
+@media(min-width:901px){
+  html,body,#root{height:100%;overflow:hidden}
+  .app-shell{height:100vh;min-height:0;overflow:hidden}
+  .game-layout{height:calc(100vh - 117px);min-height:0;overflow:hidden;align-items:stretch}
+  .game-layout .bets-card,.game-layout .chat-panel{height:100%;min-height:0}
+  .game-layout .center-column{height:100%;min-height:0;overflow:hidden}
+}
