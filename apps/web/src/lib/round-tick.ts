@@ -25,6 +25,14 @@ socket.on("round:tick", (tick: RoundTick) => {
   notify();
 });
 
+// The server sends this phase-boundary event reliably so the takeoff frame is
+// not lost when volatile multiplier packets are being dropped for a slow
+// client.
+socket.on("round:started", (tick: RoundTick) => {
+  currentTick = tick;
+  notify();
+});
+
 socket.on("round:state", (round: RoundSnapshot) => {
   currentTick = snapshotFromRound(round);
   notify();

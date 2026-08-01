@@ -794,19 +794,33 @@ export class GameEngine {
       let crashJustTriggered = false;
 
       if (this.phase === "WAITING" && this.phaseEndsAt && now >= this.phaseEndsAt) {
+        // Use the scheduled deadline as the authoritative start timestamp. A
+        // timer callback can run a few milliseconds late under load; using
+        // `now` made clients wait at 0 and then receive a plane already partway
+        // through its path.
+        const scheduledStartAt = this.phaseEndsAt;
         this.phase = "RUNNING";
-        this.startedAt = now;
+        this.startedAt = scheduledStartAt;
         this.phaseEndsAt = null;
         this.multiplier = 1;
-        // Persist the phase transition outside the real-time frame path. The
-        // in-memory engine remains authoritative and should not wait on Atlas
-        // latency before clients see the plane start.
+
+        // Send the first running frame reliably. Normal 50 ms frames remain
+        // volatile, but this phase-boundary packet must never be dropped.
+        const startedTick = this.getTick();
+        this.io.emit("round:started", startedTick);
+        this.io.emit("round:tick", startedTick);
+
+        // Do not send the large round snapshot in the same frame as takeoff;
+        // it can briefly block rendering on mobile. The regular snapshot will
+        // follow after the configured broadcast interval.
+        this.lastSnapshotBroadcastAt = now;
+
+        // Persist outside the real-time path so Atlas latency cannot delay the
+        // visible start of the round.
         void GameRoundModel.updateOne(
           { roundId: this.roundId },
-          { $set: { phase: "RUNNING", startedAt: new Date(now) } }
+          { $set: { phase: "RUNNING", startedAt: new Date(scheduledStartAt) } }
         ).catch((error) => console.error(`[round-start-persist] round=${this.roundId}`, error));
-        this.io.emit("round:started", { roundId: this.roundId });
-        forceSnapshot = true;
       }
 
       if (this.phase === "RUNNING" && this.startedAt) {

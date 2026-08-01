@@ -215,6 +215,14 @@ export class AviatorPixiScene {
     const phase = this.round.phase;
 
     if (phase === "WAITING") {
+      // Start a visual-only takeoff exactly when the authoritative countdown
+      // deadline is reached. Betting state remains server-controlled, while
+      // the graph no longer freezes on 0 during the network trip of the first
+      // RUNNING packet.
+      if (this.round.phaseEndsAt && now >= this.round.phaseEndsAt) {
+        this.renderRunning(width, height, now, this.round.phaseEndsAt, 1);
+        return;
+      }
       this.renderWaiting(width, height, now);
       return;
     }
@@ -268,12 +276,18 @@ export class AviatorPixiScene {
     this.audience.visible = true;
   }
 
-  private renderRunning(width: number, height: number, now: number): void {
-    const elapsed = this.round.startedAt ? Math.max(0, now - this.round.startedAt) : 0;
+  private renderRunning(
+    width: number,
+    height: number,
+    now: number,
+    startedAt: number | null = this.round.startedAt,
+    multiplier: number = this.round.multiplier
+  ): void {
+    const elapsed = startedAt ? Math.max(0, now - startedAt) : 0;
     // Display only the authoritative multiplier received from the server.
     // Client-side extrapolation could run ahead of the real crash point during
     // network jitter, causing the visible value to drop after “FLEW AWAY!”.
-    const visualMultiplier = Number(Math.max(1, this.round.multiplier).toFixed(2));
+    const visualMultiplier = Number(Math.max(1, multiplier).toFixed(2));
     const flightPoint = this.calculateFlightPoint(width, height, elapsed);
     const planeX =
       flightPoint.x +
