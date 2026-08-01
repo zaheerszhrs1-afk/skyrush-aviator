@@ -2042,3 +2042,14 @@ button { color: inherit; }
 .monthly-bonus-list{display:grid;gap:8px}.monthly-bonus-row{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr)) 78px;align-items:end;gap:8px}.monthly-bonus-row label,.bonus-schedule-grid label{display:flex;flex-direction:column;gap:5px;color:#aeb5be;font-size:10px}.monthly-bonus-row button{border:0;border-radius:8px;background:#7f263a;color:#fff;padding:9px 8px;cursor:pointer}.monthly-bonus-row button:disabled{opacity:.45;cursor:not-allowed}.bonus-schedule-grid{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:9px}.bonus-schedule-grid .toggle-setting{justify-content:center;align-self:stretch}
 @media(max-width:900px){.bonus-detail-heading{flex-direction:column}.bonus-detail-heading .save-settings{width:100%}.bonus-schedule-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.bonus-detail-settings{padding:12px}.bonus-settings-section{padding:11px}.monthly-bonus-row{grid-template-columns:1fr 1fr}.monthly-bonus-row label:nth-child(3){grid-column:1/-1}.monthly-bonus-row button{grid-column:2}.bonus-schedule-grid{grid-template-columns:1fr}.mobile-only-label{display:block;color:#818994;font-size:9px}}
+
+/* Keep the game banner between the title and wallet controls. */
+.game-title-row>.game-name{flex:0 0 auto}
+.game-title-row>.campaign-banner{align-self:stretch;flex:1 1 auto;width:auto;min-width:0;min-height:0;padding:4px 32px 4px 12px;border-bottom:0;border-left:1px solid color-mix(in srgb,var(--campaign-accent,#ff6b8d) 38%,transparent);overflow:hidden}
+.game-title-row>.campaign-banner>div{width:100%;min-width:0;overflow:hidden;white-space:nowrap}
+.game-title-row>.campaign-banner strong{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.game-title-row>.campaign-banner span{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
+.game-title-row>.campaign-banner .campaign-action{flex:0 0 auto;margin:0;padding:5px 8px;font-size:9px;white-space:nowrap}
+.game-title-row>.campaign-banner>button{right:6px;font-size:18px;cursor:pointer}
+.game-title-row>.balance{flex:0 0 auto}
+@media(max-width:900px){.game-title-row>.campaign-banner{padding:3px 20px 3px 7px}.game-title-row>.campaign-banner>div{justify-content:flex-start}.game-title-row>.campaign-banner span,.game-title-row>.campaign-banner .campaign-action{display:none}.game-title-row>.campaign-banner strong{font-size:10px}.game-title-row>.campaign-banner>button{right:4px;font-size:15px}}
