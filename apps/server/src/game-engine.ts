@@ -16,11 +16,12 @@ import {
   type TransactionType
 } from "./models.js";
 import { fromMinor, minorFromDocument, toMinor } from "./money.js";
-import type { AccountMode, BetSlot, PublicBet, RoundHistoryItem, RoundPhase, RoundSnapshot, WalletSnapshot } from "./types.js";
+import type { AccountMode, BetSlot, PublicBet, RoundHistoryItem, RoundPhase, RoundSnapshot, RoundTick, WalletSnapshot } from "./types.js";
 
 const WAITING_MS = 8_000;
 const CRASHED_MS = 3_000;
-const TICK_MS = 100;
+const TICK_MS = 50;
+const SNAPSHOT_BROADCAST_MS = 750;
 const MAX_CRASH = 1000;
 const QUEUED_ROUND_ID = "__NEXT_ROUND__";
 
@@ -177,6 +178,8 @@ export class GameEngine {
   private roundSettled = false;
   private timer?: NodeJS.Timeout;
   private ticking = false;
+  private lastSnapshotBroadcastAt = 0;
+  private readonly pendingWalletRefreshes = new Set<string>();
 
   constructor(io: Server) {
     this.io = io;
@@ -239,6 +242,17 @@ export class GameEngine {
       activeBetEscrow: fromMinor(this.cachedActiveBetEscrowMinor),
       reservedRewardLiquidity: fromMinor(this.cachedReservedLiquidityMinor),
       availableRewardLiquidity: fromMinor(availableRewardLiquidityMinor)
+    };
+  }
+
+  getTick(): RoundTick {
+    return {
+      roundId: this.roundId,
+      phase: this.phase,
+      multiplier: this.multiplier,
+      phaseEndsAt: this.phaseEndsAt,
+      startedAt: this.startedAt,
+      crashPoint: this.phase === "CRASHED" ? this.crashPoint : undefined
     };
   }
 
@@ -329,6 +343,7 @@ export class GameEngine {
       status: queueForNextRound ? "QUEUED" : "ACTIVE",
       guaranteedMaxMultiplier: this.settings.maxCashoutMultiplier
     };
+    let userAfter: any;
 
     try {
       let stateAfter: any;
@@ -396,6 +411,7 @@ export class GameEngine {
           { new: true, session }
         );
         if (!updatedUser) throw new Error("Insufficient available balance.");
+        userAfter = updatedUser;
 
         await GameBetModel.create(
           [{
@@ -493,6 +509,7 @@ export class GameEngine {
       this.activeBets.set(userId, userBets);
       this.bets.push(bet);
     }
+    this.emitWalletPatchForUser(userId, userAfter);
     this.emitState();
     this.scheduleWalletRefresh(userId);
     return queueForNextRound
@@ -526,6 +543,7 @@ export class GameEngine {
     );
     const amountMinor = toMinor(bet.amount);
     const payout = calculatePayout(amountMinor, lockedMultiplier, this.settings.commissionPercent);
+    let userAfter: any;
 
     try {
       let stateAfter: any;
@@ -596,6 +614,7 @@ export class GameEngine {
         (updatedUser as any).wagerCompletedMinor = wager.completedAfterMinor;
         (updatedUser as any).wagerTrackingVersion = 2;
         await updatedUser.save({ session });
+        userAfter = updatedUser;
 
         await GameRoundModel.updateOne(
           { roundId: this.roundId },
@@ -705,6 +724,7 @@ export class GameEngine {
       this.activeBets.set(userId, userBets);
     }
 
+    this.emitWalletPatchForUser(userId, userAfter);
     this.emitState();
     this.scheduleWalletRefresh(userId);
     return { ok: true, message: `Cashed out at ${lockedMultiplier.toFixed(2)}x.` };
@@ -718,9 +738,44 @@ export class GameEngine {
   }
 
   private scheduleWalletRefresh(userId: string): void {
-    void this.emitWalletForUser(userId).catch((error) => {
-      console.error(`[wallet-refresh] user=${userId}`, error);
-    });
+    if (this.pendingWalletRefreshes.has(userId)) return;
+    this.pendingWalletRefreshes.add(userId);
+    void this.emitWalletForUser(userId)
+      .catch((error) => {
+        console.error(`[wallet-refresh] user=${userId}`, error);
+      })
+      .finally(() => {
+        this.pendingWalletRefreshes.delete(userId);
+      });
+  }
+
+  private emitWalletPatchForUser(userId: string, user: any): void {
+    if (!user) return;
+    const balanceMinor = minorFromDocument(user, "balanceMinor", "balance");
+    const withdrawalLockedMinor = minorFromDocument(user, "withdrawalLockedMinor", "lockedBalance");
+    const bettingLockedMinor = Math.max(0, Number(user?.bettingLockedMinor ?? 0));
+    const pendingRewardsMinor = Math.max(0, Number(user?.pendingRewardsMinor ?? 0));
+    const wagerRequirementMinor = Math.max(0, Number(user?.wagerRequirementMinor ?? 0));
+    const wagerTargetMinor = Math.max(wagerRequirementMinor, Number(user?.wagerTargetMinor ?? wagerRequirementMinor));
+    const wagerCompletedMinor = Math.min(
+      wagerTargetMinor,
+      Math.max(0, Number(user?.wagerCompletedMinor ?? wagerTargetMinor - wagerRequirementMinor))
+    );
+    const patch: Partial<WalletSnapshot> = {
+      balance: fromMinor(balanceMinor),
+      lockedBalance: fromMinor(withdrawalLockedMinor),
+      bettingLockedBalance: fromMinor(bettingLockedMinor),
+      pendingRewards: fromMinor(pendingRewardsMinor),
+      wagerRequirementRemaining: fromMinor(wagerRequirementMinor),
+      wagerRequirementTarget: fromMinor(wagerTargetMinor),
+      wagerRequirementCompleted: fromMinor(wagerCompletedMinor),
+      totalBalance: fromMinor(balanceMinor + withdrawalLockedMinor + bettingLockedMinor + pendingRewardsMinor),
+      activeBets: this.activeBets.get(userId) ?? {},
+      queuedBets: this.queuedBets.get(userId) ?? {}
+    };
+    for (const [socketId, connectedUserId] of this.socketUsers.entries()) {
+      if (connectedUserId === userId) this.io.to(socketId).emit("wallet:patch", patch);
+    }
   }
 
   async emitWalletForUser(userId: string): Promise<void> {
@@ -735,17 +790,23 @@ export class GameEngine {
     this.ticking = true;
     try {
       const now = Date.now();
+      let forceSnapshot = false;
+      let crashJustTriggered = false;
 
       if (this.phase === "WAITING" && this.phaseEndsAt && now >= this.phaseEndsAt) {
         this.phase = "RUNNING";
         this.startedAt = now;
         this.phaseEndsAt = null;
         this.multiplier = 1;
-        await GameRoundModel.updateOne(
+        // Persist the phase transition outside the real-time frame path. The
+        // in-memory engine remains authoritative and should not wait on Atlas
+        // latency before clients see the plane start.
+        void GameRoundModel.updateOne(
           { roundId: this.roundId },
           { $set: { phase: "RUNNING", startedAt: new Date(now) } }
-        );
+        ).catch((error) => console.error(`[round-start-persist] round=${this.roundId}`, error));
         this.io.emit("round:started", { roundId: this.roundId });
+        forceSnapshot = true;
       }
 
       if (this.phase === "RUNNING" && this.startedAt) {
@@ -757,17 +818,25 @@ export class GameEngine {
           this.phase = "CRASHED";
           this.phaseEndsAt = null;
           this.roundSettled = false;
+          crashJustTriggered = true;
+          forceSnapshot = true;
         }
       }
 
-      await this.demo.onTick(this.phase, this.multiplier);
+      if (crashJustTriggered) {
+        // Broadcast the authoritative crash point before settlement queries so
+        // the animation never waits for remote database writes.
+        this.emitTick();
+      }
+
+      this.demo.onTick(this.phase, this.multiplier);
       this.bots.onTick(this.phase, this.multiplier);
 
       if (this.phase === "CRASHED" && !this.roundSettled) {
         await this.settleLosses();
         this.bots.settleLosses();
         const affectedDemoUsers = await this.demo.settleLosses(this.roundId);
-        for (const userId of affectedDemoUsers) await this.emitWalletForUser(userId);
+        for (const userId of affectedDemoUsers) this.scheduleWalletRefresh(userId);
         this.roundSettled = true;
         this.phaseEndsAt = Date.now() + CRASHED_MS;
         this.history = [{
@@ -785,13 +854,18 @@ export class GameEngine {
           serverSeed: this.serverSeed,
           commit: this.commit
         });
+        forceSnapshot = true;
       }
 
       if (this.phase === "CRASHED" && this.roundSettled && this.phaseEndsAt && now >= this.phaseEndsAt) {
         await this.prepareRound();
+        forceSnapshot = true;
       }
 
-      this.emitState();
+      this.emitTick();
+      if (forceSnapshot || now - this.lastSnapshotBroadcastAt >= SNAPSHOT_BROADCAST_MS) {
+        this.emitState();
+      }
     } catch (error) {
       console.error("Game tick failed; settlement will retry without creating payouts:", error);
     } finally {
@@ -1070,7 +1144,7 @@ export class GameEngine {
       if (lostIds.has(bet.id) && bet.status === "ACTIVE") bet.status = "LOST";
     }
     this.activeBets.clear();
-    for (const userId of affectedUsers) await this.emitWalletForUser(userId);
+    for (const userId of affectedUsers) this.scheduleWalletRefresh(userId);
   }
 
   private async settleSingleLoss(dbBetInput: any): Promise<void> {
@@ -1318,7 +1392,14 @@ export class GameEngine {
     this.cachedReservedLiquidityMinor = Math.max(0, Number(state?.reservedRewardLiquidityMinor ?? 0));
   }
 
+  private emitTick(): void {
+    // Volatile frames are intentionally dropped for slow clients instead of
+    // building a stale multiplier queue in memory or over the network.
+    this.io.volatile.emit("round:tick", this.getTick());
+  }
+
   private emitState(): void {
+    this.lastSnapshotBroadcastAt = Date.now();
     this.io.emit("round:state", this.getSnapshot());
   }
 

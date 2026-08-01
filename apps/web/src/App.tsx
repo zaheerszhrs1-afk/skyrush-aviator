@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Logo } from "./components/Logo";
 import { BetsList } from "./components/BetsList";
 import { GameGraph } from "./components/GameGraph";
@@ -55,7 +55,6 @@ export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [chat, setChat] = useState<ChatItem[]>([]);
-  const [now, setNow] = useState(Date.now());
   const [connected, setConnected] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [financeOpen, setFinanceOpen] = useState(false);
@@ -68,13 +67,13 @@ export default function App() {
   const [proofRoundId, setProofRoundId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "error" | "success" }>>([]);
 
-  const notify = (message: string, type: "error" | "success" = "error") => {
+  const notify = useCallback((message: string, type: "error" | "success" = "error") => {
     const id = Date.now() + Math.floor(Math.random() * 1000);
     setToasts((items) => [...items.slice(-3), { id, message, type }]);
     window.setTimeout(() => {
       setToasts((items) => items.filter((item) => item.id !== id));
     }, 4200);
-  };
+  }, []);
 
   useEffect(() => {
     const copyingIsAllowed = (target: EventTarget | null) =>
@@ -114,9 +113,11 @@ export default function App() {
       return;
     }
 
-    const clock = window.setInterval(() => setNow(Date.now()), 250);
     const onRound = (payload: RoundSnapshot) => setRound(payload);
     const onWallet = (payload: WalletSnapshot) => setWallet(payload);
+    const onWalletPatch = (payload: Partial<WalletSnapshot>) => {
+      setWallet((current) => ({ ...current, ...payload }));
+    };
     const onHistory = (payload: ChatItem[]) => setChat(payload);
     const onChat = (payload: ChatItem) => setChat((items) => [...items.slice(-79), payload]);
     const onConnect = () => setConnected(true);
@@ -128,6 +129,7 @@ export default function App() {
 
     socket.on("round:state", onRound);
     socket.on("wallet:state", onWallet);
+    socket.on("wallet:patch", onWalletPatch);
     socket.on("chat:history", onHistory);
     socket.on("chat:new", onChat);
     socket.on("connect", onConnect);
@@ -137,9 +139,9 @@ export default function App() {
     socket.connect();
 
     return () => {
-      window.clearInterval(clock);
       socket.off("round:state", onRound);
       socket.off("wallet:state", onWallet);
+      socket.off("wallet:patch", onWalletPatch);
       socket.off("chat:history", onHistory);
       socket.off("chat:new", onChat);
       socket.off("connect", onConnect);
@@ -186,6 +188,36 @@ export default function App() {
     setAdminView(false);
     window.history.pushState({}, "", "/");
   };
+
+  const closeChat = useCallback(() => setChatOpen(false), []);
+
+  const historyStrip = useMemo(() => (
+    <div className={`history-strip ${historyExpanded ? "expanded" : ""}`}>
+      <div className="history-values">
+        {round.history.map((item) => (
+          <button
+            className={`history-value ${item.crashPoint < 2 ? "blue" : item.crashPoint < 10 ? "purple" : "pink"}`}
+            key={item.roundId}
+            type="button"
+            title={`Open proof for ${item.crashPoint.toFixed(2)}x`}
+            onClick={() => setProofRoundId(item.roundId)}
+          >
+            {item.crashPoint.toFixed(2)}x
+          </button>
+        ))}
+      </div>
+      <small className="edge-label">House edge {round.houseEdgePercent.toFixed(2)}%</small>
+      <button
+        className="history-expand"
+        type="button"
+        aria-label={historyExpanded ? "Collapse round history" : "Expand round history"}
+        aria-expanded={historyExpanded}
+        onClick={() => setHistoryExpanded((value) => !value)}
+      >
+        {historyExpanded ? "×" : "•••"}
+      </button>
+    </div>
+  ), [historyExpanded, round.history, round.houseEdgePercent]);
 
   if (authLoading) return <div className="app-loading">Loading secure session…</div>;
   if (!user) return <AuthPage onAuthenticated={(authenticatedUser) => setUser(authenticatedUser)} />;
@@ -251,38 +283,14 @@ export default function App() {
       <main className={`game-layout ${chatOpen ? "chat-open" : ""}`}>
         <BetsList bets={visibleBets} online={visibleOnline} />
         <section className={`center-column ${historyExpanded ? "history-open" : ""}`}>
-          <div className={`history-strip ${historyExpanded ? "expanded" : ""}`}>
-            <div className="history-values">
-              {round.history.map((item) => (
-                <button
-                  className={`history-value ${item.crashPoint < 2 ? "blue" : item.crashPoint < 10 ? "purple" : "pink"}`}
-                  key={item.roundId}
-                  type="button"
-                  title={`Open proof for ${item.crashPoint.toFixed(2)}x`}
-                  onClick={() => setProofRoundId(item.roundId)}
-                >
-                  {item.crashPoint.toFixed(2)}x
-                </button>
-              ))}
-            </div>
-            <small className="edge-label">House edge {round.houseEdgePercent.toFixed(2)}%</small>
-            <button
-              className="history-expand"
-              type="button"
-              aria-label={historyExpanded ? "Collapse round history" : "Expand round history"}
-              aria-expanded={historyExpanded}
-              onClick={() => setHistoryExpanded((value) => !value)}
-            >
-              {historyExpanded ? "×" : "•••"}
-            </button>
-          </div>
-          <GameGraph round={round} now={now} />
+          {historyStrip}
+          <GameGraph round={round} />
           <div className="bet-panels">
             <BetPanel slot="left" round={round} wallet={wallet} accountMode={accountMode} onNotify={notify} />
             <BetPanel slot="right" round={round} wallet={wallet} accountMode={accountMode} onNotify={notify} />
           </div>
         </section>
-        <ChatPanel chat={chat} online={visibleOnline} onClose={() => setChatOpen(false)} />
+        <ChatPanel chat={chat} online={visibleOnline} onClose={closeChat} />
       </main>
       {!chatOpen && <button className="floating-chat" aria-label="Open chat" onClick={() => setChatOpen(true)}>💬</button>}
       {financeOpen && accountMode === "REAL" && <FinanceModal wallet={wallet} onClose={() => setFinanceOpen(false)} onWalletRefresh={setWallet} />}

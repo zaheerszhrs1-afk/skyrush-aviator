@@ -63,6 +63,15 @@ export interface RoundSnapshot {
   availableRewardLiquidity: number;
 }
 
+export interface RoundTick {
+  roundId: string;
+  phase: RoundPhase;
+  multiplier: number;
+  phaseEndsAt: number | null;
+  startedAt: number | null;
+  crashPoint?: number;
+}
+
 export interface WalletSnapshot {
   balance: number;
   lockedBalance: number;

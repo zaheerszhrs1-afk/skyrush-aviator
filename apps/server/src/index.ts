@@ -225,7 +225,11 @@ app.get("/api/auth/me", requireAuth, asyncRoute(async (request: AuthenticatedReq
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: corsOrigin, credentials: true },
-  transports: ["websocket", "polling"]
+  transports: ["websocket"],
+  perMessageDeflate: false,
+  pingInterval: 10_000,
+  pingTimeout: 5_000,
+  maxHttpBufferSize: 100_000
 });
 
 const engine = new GameEngine(io);

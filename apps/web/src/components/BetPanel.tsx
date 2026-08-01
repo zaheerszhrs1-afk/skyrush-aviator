@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AccountMode, BetSlot, RoundSnapshot, WalletSnapshot } from "../types";
 import { socket } from "../lib/socket";
+import { useRoundTick } from "../lib/round-tick";
 
 type Props = {
   slot: BetSlot;
@@ -19,6 +20,7 @@ type BetActionResult = {
 const quickAmounts = [64, 160, 320, 1600];
 
 export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) {
+  const roundState = useRoundTick(round);
   const [mode, setMode] = useState<"bet" | "auto">("bet");
   const [amount, setAmount] = useState(16);
   const [autoBet, setAutoBet] = useState(false);
@@ -32,12 +34,12 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
   const lastAutoCashoutRef = useRef<string | null>(null);
   const activeBet = accountMode === "DEMO" ? wallet.demoActiveBets[slot] : wallet.activeBets[slot];
   const queuedBet = accountMode === "REAL" ? wallet.queuedBets[slot] : undefined;
-  const acceptedBet = queuedBet ?? (activeBet && round.phase !== "RUNNING" ? activeBet : undefined);
+  const acceptedBet = queuedBet ?? (activeBet && roundState.phase !== "RUNNING" ? activeBet : undefined);
   const payableMultiplier = activeBet
-    ? Math.min(round.multiplier, activeBet.guaranteedMaxMultiplier ?? round.multiplier)
-    : round.multiplier;
+    ? Math.min(roundState.multiplier, activeBet.guaranteedMaxMultiplier ?? roundState.multiplier)
+    : roundState.multiplier;
   const estimatedCashout = activeBet
-    ? activeBet.amount + Math.max(0, activeBet.amount * (payableMultiplier - 1)) * (1 - round.commissionPercent / 100)
+    ? activeBet.amount + Math.max(0, activeBet.amount * (payableMultiplier - 1)) * (1 - roundState.commissionPercent / 100)
     : 0;
 
   useEffect(() => {
@@ -103,7 +105,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
   };
 
   useEffect(() => {
-    if (!autoCashOut || !activeBet || round.phase !== "RUNNING" || round.multiplier < autoAt) return;
+    if (!autoCashOut || !activeBet || roundState.phase !== "RUNNING" || roundState.multiplier < autoAt) return;
     const requestKey = `${accountMode}:${activeBet.id}`;
     if (autoCashoutRequestRef.current === requestKey || lastAutoCashoutRef.current === requestKey) return;
 
@@ -113,33 +115,29 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
       lastAutoCashoutRef.current = requestKey;
       handleAutoResult(result, "cashout");
     });
-  }, [accountMode, autoAt, autoCashOut, activeBet?.id, round.multiplier, round.phase, slot]);
+  }, [accountMode, autoAt, autoCashOut, activeBet?.id, roundState.multiplier, roundState.phase, slot]);
 
   useEffect(() => {
-    if (!autoBet || !round.roundId || activeBet || queuedBet) return;
-    if (accountMode === "DEMO" && round.phase !== "WAITING") return;
+    if (!autoBet || !roundState.roundId || activeBet || queuedBet) return;
+    if (accountMode === "DEMO" && roundState.phase !== "WAITING") return;
 
     const requestKey = accountMode === "DEMO"
-      ? `demo:${round.roundId}`
-      : `${round.phase === "WAITING" ? "round" : "next"}:${round.roundId}`;
+      ? `demo:${roundState.roundId}`
+      : `${roundState.phase === "WAITING" ? "round" : "next"}:${roundState.roundId}`;
     if (autoPlaceRequestRef.current === requestKey || lastAutoPlaceRef.current === requestKey) return;
 
-    const timer = window.setTimeout(() => {
-      if (autoPlaceRequestRef.current === requestKey || lastAutoPlaceRef.current === requestKey) return;
-      autoPlaceRequestRef.current = requestKey;
-      socket.emit("bet:place", { slot, amount, mode: accountMode }, (result: BetActionResult) => {
-        if (autoPlaceRequestRef.current === requestKey) autoPlaceRequestRef.current = null;
-        lastAutoPlaceRef.current = requestKey;
-        handleAutoResult(result, "place");
-      });
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [accountMode, activeBet?.id, amount, autoBet, queuedBet?.id, round.phase, round.roundId, slot]);
+    autoPlaceRequestRef.current = requestKey;
+    socket.emit("bet:place", { slot, amount, mode: accountMode }, (result: BetActionResult) => {
+      if (autoPlaceRequestRef.current === requestKey) autoPlaceRequestRef.current = null;
+      lastAutoPlaceRef.current = requestKey;
+      handleAutoResult(result, "place");
+    });
+  }, [accountMode, activeBet?.id, amount, autoBet, queuedBet?.id, roundState.phase, roundState.roundId, slot]);
 
   const primaryAction = () => {
     if (actionPending) return;
 
-    if (activeBet && round.phase === "RUNNING") {
+    if (activeBet && roundState.phase === "RUNNING") {
       setActionPending("cashout");
       setMessage(`Cash-out requested at ${payableMultiplier.toFixed(2)}x...`);
       socket.emit("bet:cashout", { slot, mode: accountMode }, (result: BetActionResult) => {
@@ -162,7 +160,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
     ? `${prefix}Cashing Out...`
     : actionPending === "place"
       ? `${prefix}Placing...`
-      : activeBet && round.phase === "RUNNING"
+      : activeBet && roundState.phase === "RUNNING"
         ? `${prefix}Cash Out`
         : queuedBet
       ? "Accepted"
@@ -170,7 +168,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
         ? `${prefix}Bet placed`
         : `${prefix}Bet`;
 
-  const buttonValue = activeBet && round.phase === "RUNNING"
+  const buttonValue = activeBet && roundState.phase === "RUNNING"
     ? `${estimatedCashout.toFixed(2)} PKR`
     : queuedBet
       ? `${queuedBet.amount.toFixed(2)} PKR — Next round`
@@ -207,7 +205,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
         </div>
 
         <button
-          className={`primary-bet ${activeBet && round.phase === "RUNNING" ? "cashout" : ""} ${acceptedBet ? "accepted" : ""}`}
+          className={`primary-bet ${activeBet && roundState.phase === "RUNNING" ? "cashout" : ""} ${acceptedBet ? "accepted" : ""}`}
           onClick={primaryAction}
           disabled={Boolean(acceptedBet) || actionPending !== null}
           aria-busy={actionPending !== null}

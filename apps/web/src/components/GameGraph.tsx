@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { RoundSnapshot } from "../types";
 import { AviatorPixiScene } from "./pixi/AviatorPixiScene";
+import { getRoundTickSnapshot, subscribeRoundTick } from "../lib/round-tick";
 
-type Props = { round: RoundSnapshot; now: number };
+type Props = { round: RoundSnapshot };
 
 export function GameGraph({ round }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -51,6 +52,13 @@ export function GameGraph({ round }: Props) {
   useEffect(() => {
     sceneRef.current?.setRound(round);
   }, [round]);
+
+  useEffect(() => subscribeRoundTick(() => {
+    const tick = getRoundTickSnapshot();
+    const baseRound = latestRoundRef.current;
+    if (!tick || tick.roundId !== baseRound.roundId) return;
+    sceneRef.current?.setRound({ ...baseRound, ...tick });
+  }), []);
 
   return (
     <section className="game-graph pixi-game-graph">

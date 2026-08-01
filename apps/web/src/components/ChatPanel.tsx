@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { ChatItem } from "../types";
 import { socket } from "../lib/socket";
 
@@ -10,7 +10,7 @@ type Props = {
 
 const chatAvatars = ["🌋", "🌎", "🪐", "🎭", "🍀", "🌙", "⚡", "🎯"];
 
-export function ChatPanel({ chat, online, onClose }: Props) {
+export const ChatPanel = memo(function ChatPanel({ chat, online, onClose }: Props) {
   const [message, setMessage] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -65,4 +65,4 @@ export function ChatPanel({ chat, online, onClose }: Props) {
       </div>
     </aside>
   );
-}
+});

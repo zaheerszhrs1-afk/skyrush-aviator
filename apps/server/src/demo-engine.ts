@@ -210,7 +210,7 @@ export class DemoEngine {
     return { ok: true, message: `Demo cash-out at ${lockedMultiplier.toFixed(2)}x.` };
   }
 
-  async onTick(phase: RoundPhase, multiplier: number): Promise<void> {
+  onTick(phase: RoundPhase, multiplier: number): void {
     if (phase !== "RUNNING") return;
     for (const bet of this.publicBets) {
       if (!bet.isDemoBot || bet.status !== "ACTIVE" || !bet.targetCashout) continue;

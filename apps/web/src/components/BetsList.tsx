@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { PublicBet } from "../types";
 
 type Props = { bets: PublicBet[]; online: number };
 
-export function BetsList({ bets, online }: Props) {
+export const BetsList = memo(function BetsList({ bets, online }: Props) {
   const [tab, setTab] = useState<"all" | "previous" | "top">("all");
   const rows = useMemo(() => {
     const source = tab === "top" ? [...bets].sort((a, b) => b.amount - a.amount) : bets;
@@ -37,4 +37,4 @@ export function BetsList({ bets, online }: Props) {
       <div className="fair-footer">🛡 Provably Fair <span>Powered by B9T9</span></div>
     </aside>
   );
-}
+});
