@@ -9,6 +9,25 @@ interface FinanceModalProps {
   initialTab?: "DEPOSIT" | "WITHDRAW" | "HISTORY";
 }
 
+interface NowPaymentsConfig {
+  enabled: boolean;
+  currencies: string[];
+}
+
+interface NowPaymentInstructions {
+  depositId: string;
+  paymentId: string;
+  status: string;
+  payAmount: number;
+  payCurrency: string;
+  payAddress: string;
+  payinExtraId: string;
+  network: string;
+  expiresAt: string;
+}
+
+const NOWPAYMENTS_METHOD = "NOWPayments Crypto";
+
 export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "DEPOSIT" }: FinanceModalProps) {
   const [tab, setTab] = useState<"DEPOSIT" | "WITHDRAW" | "HISTORY">(initialTab);
   const [amount, setAmount] = useState("");
@@ -21,6 +40,9 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
   const [deposits, setDeposits] = useState<DepositRequest[]>([]);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [financeSettings, setFinanceSettings] = useState({ minDeposit: 100, minWithdrawal: 500, wageringRequirementPercent: 30, depositsEnabled: true, withdrawalsEnabled: true });
+  const [nowPayments, setNowPayments] = useState<NowPaymentsConfig>({ enabled: false, currencies: [] });
+  const [cryptoCurrency, setCryptoCurrency] = useState("");
+  const [cryptoPayment, setCryptoPayment] = useState<NowPaymentInstructions | null>(null);
 
   const wagerTarget = Math.max(0, Number(wallet.wagerRequirementTarget ?? 0));
   const wagerRemaining = Math.max(0, Number(wallet.wagerRequirementRemaining ?? 0));
@@ -46,6 +68,12 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
     void apiRequest<{ settings: typeof financeSettings }>("/api/finance/settings")
       .then((result) => setFinanceSettings(result.settings))
       .catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load wallet settings."));
+    void apiRequest<NowPaymentsConfig>("/api/payments/nowpayments/config")
+      .then((result) => {
+        setNowPayments(result);
+        setCryptoCurrency(result.currencies[0] ?? "");
+      })
+      .catch(() => setNowPayments({ enabled: false, currencies: [] }));
   }, []);
 
   useEffect(() => {
@@ -71,6 +99,15 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
     setBusy(true);
     setMessage("");
     try {
+      if (method === NOWPAYMENTS_METHOD) {
+        const result = await apiRequest<{ payment: NowPaymentInstructions }>("/api/payments/nowpayments", {
+          method: "POST",
+          body: JSON.stringify({ amount: Number(amount), payCurrency: cryptoCurrency })
+        });
+        setCryptoPayment(result.payment);
+        setMessage("Crypto payment created. Send the exact amount below; your wallet is credited automatically after confirmation.");
+        return;
+      }
       await apiRequest("/api/deposits", {
         method: "POST",
         body: JSON.stringify({ amount: Number(amount), method, reference })
@@ -83,6 +120,12 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
     } finally {
       setBusy(false);
     }
+  };
+
+  const copyPaymentValue = (value: string) => {
+    void navigator.clipboard.writeText(value)
+      .then(() => setMessage("Copied to clipboard."))
+      .catch(() => setMessage("Copy failed. Select and copy the value manually."));
   };
 
   const submitWithdrawal = async (event: React.FormEvent) => {
@@ -114,17 +157,26 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
         </header>
         <nav>
           <button className={tab === "DEPOSIT" ? "active" : ""} onClick={() => setTab("DEPOSIT")}>Deposit</button>
-          <button className={tab === "WITHDRAW" ? "active" : ""} onClick={() => setTab("WITHDRAW")}>Withdraw</button>
+          <button className={tab === "WITHDRAW" ? "active" : ""} onClick={() => { setTab("WITHDRAW"); if (method === NOWPAYMENTS_METHOD) setMethod("Bank Transfer"); }}>Withdraw</button>
           <button className={tab === "HISTORY" ? "active" : ""} onClick={() => setTab("HISTORY")}>History</button>
         </nav>
 
         {tab === "DEPOSIT" && (
           <form className="finance-form" onSubmit={submitDeposit}>
-            <label>Amount (PKR)<input type="number" min={financeSettings.minDeposit} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
-            <label>Payment method<select value={method} onChange={(event) => setMethod(event.target.value)}><option>Bank Transfer</option><option>JazzCash</option><option>EasyPaisa</option><option>USDT Manual</option></select></label>
-            <label>Transaction/reference ID<input value={reference} onChange={(event) => setReference(event.target.value)} required /></label>
-            <small className="finance-rule">Minimum deposit: {financeSettings.minDeposit.toLocaleString()} PKR. Approved deposits add a {financeSettings.wageringRequirementPercent}% wagering requirement.</small>
-            <button disabled={busy || !financeSettings.depositsEnabled}>{!financeSettings.depositsEnabled ? "Deposits disabled" : busy ? "Submitting..." : "Submit deposit request"}</button>
+            <label>Amount (PKR)<input type="number" min={financeSettings.minDeposit} step="0.01" value={amount} onChange={(event) => { setAmount(event.target.value); setCryptoPayment(null); }} required /></label>
+            <label>Payment method<select value={method} onChange={(event) => { setMethod(event.target.value); setCryptoPayment(null); }}><option>Bank Transfer</option><option>JazzCash</option><option>EasyPaisa</option><option>USDT Manual</option>{nowPayments.enabled && <option>{NOWPAYMENTS_METHOD}</option>}</select></label>
+            {method === NOWPAYMENTS_METHOD
+              ? <label>Pay with<select value={cryptoCurrency} onChange={(event) => { setCryptoCurrency(event.target.value); setCryptoPayment(null); }}>{nowPayments.currencies.map((currency) => <option value={currency} key={currency}>{currency.toUpperCase()}</option>)}</select></label>
+              : <label>Transaction/reference ID<input value={reference} onChange={(event) => setReference(event.target.value)} required /></label>}
+            <small className="finance-rule">Minimum deposit: {financeSettings.minDeposit.toLocaleString()} PKR. {method === NOWPAYMENTS_METHOD ? "Crypto deposits are credited automatically after NOWPayments reports the payment as finished and" : "Approved deposits"} add a {financeSettings.wageringRequirementPercent}% wagering requirement.</small>
+            <button disabled={busy || !financeSettings.depositsEnabled || (method === NOWPAYMENTS_METHOD && (!cryptoCurrency || Boolean(cryptoPayment)))}>{!financeSettings.depositsEnabled ? "Deposits disabled" : busy ? "Submitting..." : cryptoPayment ? "Payment created" : method === NOWPAYMENTS_METHOD ? "Create crypto payment" : "Submit deposit request"}</button>
+            {cryptoPayment && <section className="crypto-payment-card" aria-live="polite">
+              <header><div><small>NOWPayments</small><strong>Send exactly {cryptoPayment.payAmount} {cryptoPayment.payCurrency.toUpperCase()}</strong></div><span>{cryptoPayment.status.replaceAll("_", " ")}</span></header>
+              {cryptoPayment.network && <p>Network <strong>{cryptoPayment.network.toUpperCase()}</strong></p>}
+              <label>Payment address<div><code>{cryptoPayment.payAddress}</code><button type="button" onClick={() => copyPaymentValue(cryptoPayment.payAddress)}>Copy</button></div></label>
+              {cryptoPayment.payinExtraId && <label>Memo / destination tag<div><code>{cryptoPayment.payinExtraId}</code><button type="button" onClick={() => copyPaymentValue(cryptoPayment.payinExtraId)}>Copy</button></div></label>}
+              {cryptoPayment.expiresAt && <small>Payment estimate expires {new Date(cryptoPayment.expiresAt).toLocaleString()}.</small>}
+            </section>}
           </form>
         )}
 
@@ -166,7 +218,7 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
             <h3>Wallet transactions</h3>
             {transactions.map((item) => <div className="history-item" key={item._id}><span>{item.description || item.type}<small>{new Date(item.createdAt).toLocaleString()}</small></span><strong className={item.amount >= 0 ? "positive" : "negative"}>{item.amount >= 0 ? "+" : ""}{item.amount.toLocaleString()} PKR</strong></div>)}
             <h3>Deposit requests</h3>
-            {deposits.map((item) => <div className="history-item" key={item._id}><span>{item.method}<small>{item.reference}</small></span><strong>{item.amount.toLocaleString()} · {item.status}</strong></div>)}
+            {deposits.map((item) => <div className="history-item" key={item._id}><span>{item.method}<small>{item.gatewayStatus ? `Gateway: ${item.gatewayStatus.replaceAll("_", " ")}${item.gatewayPayAmount && item.gatewayPayCurrency ? ` · ${item.gatewayPayAmount} ${item.gatewayPayCurrency.toUpperCase()}` : ""}${item.gatewayPayAddress ? ` · ${item.gatewayPayAddress}` : ""}` : item.reference}</small></span><strong>{item.amount.toLocaleString()} · {item.status}</strong></div>)}
             <h3>Withdrawal requests</h3>
             {withdrawals.map((item) => <div className="history-item" key={item._id}><span>{item.method}<small>{new Date(item.createdAt).toLocaleString()}</small></span><strong>{item.amount.toLocaleString()} · {item.status}</strong></div>)}
           </div>

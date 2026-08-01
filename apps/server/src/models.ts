@@ -86,7 +86,8 @@ const userSchema = new Schema(
     // Legacy PKR fields are retained during migration and mirrored for compatibility.
     balance: { type: Number, default: 0, min: 0 },
     lockedBalance: { type: Number, default: 0, min: 0 },
-    lastLoginAt: { type: Date }
+    lastLoginAt: { type: Date },
+    lastActiveAt: { type: Date, index: true }
   },
   { timestamps: true, versionKey: false }
 );
@@ -164,12 +165,25 @@ const depositRequestSchema = new Schema(
     reviewedAt: { type: Date },
     reviewNote: { type: String, default: "", maxlength: 500 },
     wageringPercentApplied: { type: Number, min: 0, max: 100 },
-    wagerRequirementMinor: { type: Number, min: 0 }
+    wagerRequirementMinor: { type: Number, min: 0 },
+    gatewayProvider: { type: String, enum: ["NOWPAYMENTS"] },
+    gatewayPaymentId: { type: String, trim: true },
+    gatewayStatus: { type: String, trim: true, maxlength: 40 },
+    gatewayPriceAmount: { type: Number, min: 0 },
+    gatewayPriceCurrency: { type: String, trim: true, maxlength: 20 },
+    gatewayPayAmount: { type: Number, min: 0 },
+    gatewayPayCurrency: { type: String, trim: true, maxlength: 40 },
+    gatewayPayAddress: { type: String, trim: true, maxlength: 500 },
+    gatewayPayinExtraId: { type: String, trim: true, maxlength: 500 },
+    gatewayNetwork: { type: String, trim: true, maxlength: 80 },
+    gatewayExpiresAt: { type: Date },
+    gatewayPayload: { type: Schema.Types.Mixed, default: {} }
   },
   { timestamps: true, versionKey: false }
 );
 depositRequestSchema.index({ userId: 1, createdAt: -1 });
 depositRequestSchema.index({ userId: 1, status: 1, reviewedAt: 1 });
+depositRequestSchema.index({ gatewayPaymentId: 1 }, { unique: true, sparse: true });
 
 const withdrawalRequestSchema = new Schema(
   {

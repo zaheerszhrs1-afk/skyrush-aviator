@@ -41,11 +41,14 @@ export const ChatPanel = memo(function ChatPanel({ chat, online, onClose, user, 
     <aside className="chat-panel" aria-label="Live chat">
       <header className="chat-header">
         <nav className="chat-tabs" aria-label="Chat sections">
-          <button className={activeTab === "CHAT" ? "active" : ""} type="button" onClick={() => setActiveTab("CHAT")}>
-            <span className="online-dot" /> Chat <small>{online}</small>
+          <button className={activeTab === "CHAT" ? "active" : ""} type="button" aria-pressed={activeTab === "CHAT"} onClick={() => setActiveTab("CHAT")}>
+            <span className="chat-tab-icon live" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v10H9l-4 3v-13Z" /></svg><span className="online-dot" /></span>
+            <span className="chat-tab-copy"><strong>Live chat</strong><small>{online} online</small></span>
           </button>
-          <button className={activeTab === "SUPPORT" ? "active" : ""} type="button" onClick={() => setActiveTab("SUPPORT")}>
-            Support {supportUnread > 0 && <small>{Math.min(supportUnread, 99)}</small>}
+          <button className={activeTab === "SUPPORT" ? "active" : ""} type="button" aria-pressed={activeTab === "SUPPORT"} onClick={() => setActiveTab("SUPPORT")}>
+            <span className="chat-tab-icon support" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 13v-2a7 7 0 0 1 14 0v5a3 3 0 0 1-3 3h-3M5 13H3v4h4v-4H5Zm14 0h2v4h-4v-4h2Z" /></svg></span>
+            <span className="chat-tab-copy"><strong>Support</strong><small>Private help</small></span>
+            {supportUnread > 0 && <span className="chat-tab-badge">{Math.min(supportUnread, 99)}</span>}
           </button>
         </nav>
         <button className="chat-close" type="button" aria-label="Close chat" onClick={onClose}>X</button>

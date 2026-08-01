@@ -144,6 +144,11 @@ export interface DepositRequest {
   reference: string;
   note?: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
+  gatewayProvider?: "NOWPAYMENTS";
+  gatewayStatus?: string;
+  gatewayPayAmount?: number;
+  gatewayPayCurrency?: string;
+  gatewayPayAddress?: string;
   createdAt: string;
 }
 

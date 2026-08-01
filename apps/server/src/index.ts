@@ -14,7 +14,8 @@ import { fromMinor, toMinor } from "./money.js";
 import type { AccountMode, BetSlot } from "./types.js";
 import { bootstrapAdmin, createAuthSession, destroyAuthSession, hashPassword, optionalAuth, publicUser, requireAdmin, requireAuth, resolveAuthUserFromCookie, verifyPassword, type AuthenticatedRequest } from "./auth.js";
 import { connectDatabase, disconnectDatabase } from "./database.js";
-import { createDepositRequest, createWithdrawalRequest, reviewDeposit, reviewWithdrawal } from "./finance.js";
+import { createDepositRequest, createNowPaymentsDepositRequest, createWithdrawalRequest, reviewDeposit, reviewWithdrawal, settleNowPaymentsDeposit } from "./finance.js";
+import { createNowPayment, nowPaymentsPublicConfig, verifyNowPaymentsIpn } from "./nowpayments.js";
 import {
   adminBonusSummary,
   claimLevelUpBonus,
@@ -368,6 +369,118 @@ app.post("/api/deposits", requireAuth, asyncRoute(async (request: AuthenticatedR
   response.status(201).json({ ok: true, deposit });
 }));
 
+app.get("/api/payments/nowpayments/config", requireAuth, asyncRoute(async (_request, response) => {
+  response.json({ ok: true, ...nowPaymentsPublicConfig() });
+}));
+
+app.post("/api/payments/nowpayments", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
+  if (!nowPaymentsPublicConfig().enabled) throw new Error("NOWPayments is not configured.");
+  const deposit = await createNowPaymentsDepositRequest({
+    userId: request.authUser!.id,
+    amount: numberInput(request.body?.amount)
+  });
+
+  try {
+    const payment = await createNowPayment({
+      orderId: String(deposit._id),
+      amountPkr: Number(deposit.amount),
+      payCurrency: cleanText(request.body?.payCurrency, 40).toLowerCase(),
+      description: `B9T9 wallet deposit ${deposit._id}`
+    });
+    const expiresAt = payment.expiresAt && Number.isFinite(Date.parse(payment.expiresAt))
+      ? new Date(payment.expiresAt)
+      : undefined;
+    await DepositRequestModel.findByIdAndUpdate(deposit._id, { $set: {
+      reference: `NOWPAYMENTS:${payment.paymentId}`,
+      gatewayPaymentId: payment.paymentId,
+      gatewayStatus: payment.status,
+      gatewayPriceAmount: payment.priceAmount,
+      gatewayPriceCurrency: payment.priceCurrency,
+      gatewayPayAmount: payment.payAmount,
+      gatewayPayCurrency: payment.payCurrency,
+      gatewayPayAddress: payment.payAddress,
+      gatewayPayinExtraId: payment.payinExtraId,
+      gatewayNetwork: payment.network,
+      gatewayExpiresAt: expiresAt,
+      gatewayPayload: payment.raw
+    } });
+    response.status(201).json({
+      ok: true,
+      payment: {
+        depositId: String(deposit._id),
+        paymentId: payment.paymentId,
+        status: payment.status,
+        payAmount: payment.payAmount,
+        payCurrency: payment.payCurrency,
+        payAddress: payment.payAddress,
+        payinExtraId: payment.payinExtraId,
+        network: payment.network,
+        expiresAt: payment.expiresAt
+      }
+    });
+  } catch (error) {
+    await DepositRequestModel.updateOne(
+      { _id: deposit._id, status: "PENDING" },
+      { $set: { status: "REJECTED", gatewayStatus: "creation_failed", reviewNote: error instanceof Error ? error.message.slice(0, 500) : "NOWPayments request failed." } }
+    );
+    throw error;
+  }
+}));
+
+app.post("/api/payments/nowpayments/ipn", asyncRoute(async (request, response) => {
+  const signature = cleanText(request.get("x-nowpayments-sig"), 256);
+  if (!verifyNowPaymentsIpn(request.body, signature)) {
+    response.status(401).json({ ok: false, message: "Invalid NOWPayments signature." });
+    return;
+  }
+
+  const paymentId = cleanText(request.body?.payment_id, 160);
+  const orderId = cleanText(request.body?.order_id, 100);
+  const gatewayStatus = cleanText(request.body?.payment_status, 40).toLowerCase();
+  if (!paymentId || !mongoose.Types.ObjectId.isValid(orderId) || !gatewayStatus) {
+    response.status(400).json({ ok: false, message: "Incomplete NOWPayments callback." });
+    return;
+  }
+
+  const deposit = await DepositRequestModel.findOne({
+    _id: orderId,
+    gatewayProvider: "NOWPAYMENTS",
+    gatewayPaymentId: paymentId
+  }).select("userId status gatewayPriceAmount gatewayPriceCurrency");
+  if (!deposit) {
+    response.status(404).json({ ok: false, message: "NOWPayments deposit not found." });
+    return;
+  }
+
+  const callbackPriceAmount = Number(request.body?.price_amount);
+  const callbackPriceCurrency = cleanText(request.body?.price_currency, 20).toLowerCase();
+  if (gatewayStatus === "finished" && (
+    !Number.isFinite(callbackPriceAmount)
+    || Math.abs(callbackPriceAmount - Number((deposit as any).gatewayPriceAmount)) > 0.01
+    || callbackPriceCurrency !== String((deposit as any).gatewayPriceCurrency ?? "").toLowerCase()
+  )) {
+    response.status(409).json({ ok: false, message: "NOWPayments amount does not match the deposit." });
+    return;
+  }
+
+  await DepositRequestModel.updateOne(
+    { _id: deposit._id },
+    { $set: { gatewayStatus, gatewayPayload: request.body } }
+  );
+
+  if (gatewayStatus === "finished") {
+    const result = await settleNowPaymentsDeposit(String(deposit._id));
+    await engine.emitWalletForUser(result.userId);
+  } else if (["failed", "expired"].includes(gatewayStatus)) {
+    await DepositRequestModel.updateOne(
+      { _id: deposit._id, status: "PENDING" },
+      { $set: { status: "REJECTED", reviewedAt: new Date(), reviewNote: `NOWPayments status: ${gatewayStatus}` } }
+    );
+  }
+
+  response.json({ ok: true });
+}));
+
 app.get("/api/deposits/me", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
   const deposits = await DepositRequestModel.find({ userId: request.authUser!.id }).sort({ createdAt: -1 }).limit(100).lean();
   response.json({ ok: true, deposits });
@@ -692,8 +805,21 @@ app.get("/api/admin/users", requireAdmin, asyncRoute(async (request, response) =
   const filter = search
     ? { $or: [{ email: { $regex: search, $options: "i" } }, { name: { $regex: search, $options: "i" } }] }
     : {};
-  const users = await UserModel.find(filter).sort({ createdAt: -1 }).limit(200).lean();
-  response.json({ ok: true, users: users.map(publicUser) });
+  const karachiOffsetMs = 5 * 60 * 60 * 1000;
+  const karachiToday = new Date(Date.now() + karachiOffsetMs);
+  karachiToday.setUTCHours(0, 0, 0, 0);
+  const todayStart = new Date(karachiToday.getTime() - karachiOffsetMs);
+  const [users, dailyActiveUsers] = await Promise.all([
+    UserModel.find(filter).sort({ createdAt: -1 }).limit(200).lean(),
+    UserModel.countDocuments({
+      role: "USER",
+      $or: [
+        { lastActiveAt: { $gte: todayStart } },
+        { lastActiveAt: { $exists: false }, lastLoginAt: { $gte: todayStart } }
+      ]
+    })
+  ]);
+  response.json({ ok: true, users: users.map(publicUser), dailyActiveUsers, activeTimezone: "Asia/Karachi" });
 }));
 
 app.patch("/api/admin/users/:id", requireAdmin, asyncRoute(async (request, response) => {
@@ -965,6 +1091,8 @@ io.use(async (socket, next) => {
 
 io.on("connection", async (socket) => {
   const authUser = socket.data.user as { id: string; name: string };
+  void UserModel.updateOne({ _id: authUser.id, role: "USER" }, { $set: { lastActiveAt: new Date() } })
+    .catch((error) => console.error("Unable to update user activity.", error));
   socket.emit("round:state", engine.getSnapshot());
   socket.emit("wallet:state", await engine.connect(socket.id, authUser.id));
 

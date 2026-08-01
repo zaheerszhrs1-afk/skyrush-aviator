@@ -156,6 +156,30 @@ export async function createDepositRequest(input: {
   });
 }
 
+export async function createNowPaymentsDepositRequest(input: {
+  userId: string;
+  amount: number;
+}): Promise<any> {
+  const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
+  if (settings?.depositsEnabled === false) throw new Error("Deposits are currently disabled.");
+  const amountMinor = toMinor(input.amount);
+  const minDeposit = Number(settings?.minDeposit ?? 100);
+  if (amountMinor < toMinor(minDeposit)) throw new Error(`Minimum deposit is ${minDeposit.toFixed(2)} PKR.`);
+
+  const deposit = new DepositRequestModel({
+    userId: input.userId,
+    amountMinor,
+    amount: fromMinor(amountMinor),
+    method: "NOWPayments Crypto",
+    reference: "NOWPAYMENTS:PENDING",
+    gatewayProvider: "NOWPAYMENTS",
+    gatewayStatus: "creating"
+  });
+  deposit.reference = `NOWPAYMENTS:${deposit._id}`;
+  await deposit.save();
+  return deposit;
+}
+
 export async function createWithdrawalRequest(input: {
   userId: string;
   amount: number;
@@ -217,16 +241,20 @@ export async function createWithdrawalRequest(input: {
   return created;
 }
 
-export async function reviewDeposit(input: {
+async function processDepositReview(input: {
   depositId: string;
-  adminId: string;
+  adminId?: string;
   action: "APPROVE" | "REJECT";
   note?: string;
+  automatic?: boolean;
 }): Promise<{ userId: string }> {
   let affectedUserId = "";
   await mongoose.connection.transaction(async (session) => {
     const deposit = await DepositRequestModel.findOne({ _id: input.depositId, status: "PENDING" }).session(session);
     if (!deposit) throw new Error("Pending deposit request not found.");
+    if ((deposit as any).gatewayProvider && !input.automatic) {
+      throw new Error("Gateway deposits are settled automatically and cannot be reviewed manually.");
+    }
     affectedUserId = String(deposit.userId);
     const amountMinor = Number.isSafeInteger(Number((deposit as any).amountMinor))
       ? Number((deposit as any).amountMinor)
@@ -234,7 +262,7 @@ export async function reviewDeposit(input: {
 
     if (input.action === "REJECT") {
       deposit.status = "REJECTED";
-      deposit.reviewedBy = new mongoose.Types.ObjectId(input.adminId);
+      if (input.adminId) deposit.reviewedBy = new mongoose.Types.ObjectId(input.adminId);
       deposit.reviewedAt = new Date();
       deposit.reviewNote = input.note?.trim() ?? "";
       await deposit.save({ session });
@@ -262,7 +290,7 @@ export async function reviewDeposit(input: {
     await user.save({ session });
 
     deposit.status = "APPROVED";
-    deposit.reviewedBy = new mongoose.Types.ObjectId(input.adminId);
+    if (input.adminId) deposit.reviewedBy = new mongoose.Types.ObjectId(input.adminId);
     deposit.reviewedAt = new Date();
     deposit.reviewNote = input.note?.trim() ?? "";
     (deposit as any).amountMinor = amountMinor;
@@ -291,8 +319,8 @@ export async function reviewDeposit(input: {
         user,
         referenceType: "DEPOSIT",
         referenceId: String(deposit._id),
-        description: `Deposit approved via ${deposit.method}; wagering requirement ${fromMinor(wagerRequirementMinor).toFixed(2)} PKR`,
-        metadata: { wageringPercent, wagerRequirementMinor }
+        description: `${input.automatic ? "Deposit automatically settled" : "Deposit approved"} via ${deposit.method}; wagering requirement ${fromMinor(wagerRequirementMinor).toFixed(2)} PKR`,
+        metadata: { wageringPercent, wagerRequirementMinor, automatic: input.automatic === true }
       })],
       { session, ordered: true }
     );
@@ -302,20 +330,48 @@ export async function reviewDeposit(input: {
         eventKey: `deposit-approved:${deposit._id}`,
         type: "DEPOSIT_APPROVED" as const,
         userId: deposit.userId,
-        adminId: new mongoose.Types.ObjectId(input.adminId),
+        ...(input.adminId ? { adminId: new mongoose.Types.ObjectId(input.adminId) } : {}),
         referenceId: String(deposit._id),
         activeBetEscrowAfterMinor: Number((state as any).activeBetEscrowMinor ?? 0),
         reservedLiquidityAfterMinor: Number((state as any).reservedRewardLiquidityMinor ?? 0),
         lossPoolAfterMinor: Number((state as any).lossPoolMinor ?? 0),
         commissionWalletAfterMinor: Number((state as any).commissionWalletMinor ?? 0),
-        description: `Approved deposit of ${fromMinor(amountMinor).toFixed(2)} PKR with ${wageringPercent.toFixed(2)}% wagering requirement`,
-        metadata: { wageringPercent, wagerRequirementMinor }
+        description: `${input.automatic ? "Automatically settled" : "Approved"} deposit of ${fromMinor(amountMinor).toFixed(2)} PKR with ${wageringPercent.toFixed(2)}% wagering requirement`,
+        metadata: { wageringPercent, wagerRequirementMinor, automatic: input.automatic === true }
       }],
       { session, ordered: true }
     );
   });
 
   return { userId: affectedUserId };
+}
+
+export async function reviewDeposit(input: {
+  depositId: string;
+  adminId: string;
+  action: "APPROVE" | "REJECT";
+  note?: string;
+}): Promise<{ userId: string }> {
+  return processDepositReview(input);
+}
+
+export async function settleNowPaymentsDeposit(depositId: string): Promise<{ userId: string }> {
+  try {
+    return await processDepositReview({
+      depositId,
+      action: "APPROVE",
+      automatic: true,
+      note: "Automatically settled after a signed NOWPayments finished callback."
+    });
+  } catch (error) {
+    const existing = await DepositRequestModel.findOne({
+      _id: depositId,
+      gatewayProvider: "NOWPAYMENTS",
+      status: "APPROVED"
+    }).select("userId").lean();
+    if (existing) return { userId: String(existing.userId) };
+    throw error;
+  }
 }
 
 export async function reviewWithdrawal(input: {
