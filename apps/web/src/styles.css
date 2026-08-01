@@ -1971,3 +1971,48 @@ button { color: inherit; }
 @media(max-width:900px){.game-layout.chat-open .chat-panel{display:flex!important;position:fixed;z-index:510;top:76px;right:8px;bottom:8px;left:8px;width:auto;height:auto;border-radius:16px}.game-layout.chat-open .chat-panel .chat-scroll{min-height:0}.game-layout.chat-open .chat-panel .support-chat-inline{min-height:0}.chat-tabs button{font-size:10px}}
 .content-meta-grid label,.design-controls label{display:flex;flex-direction:column;gap:6px;color:#b6bbc4;font-size:11px}
 .floating-support{display:none!important}
+
+/* Responsive fixes for profile access, support actions and chat layout. */
+.chat-header .chat-tabs{flex:1;min-width:0;justify-content:flex-start}
+.chat-header .chat-tabs button{flex:0 1 auto;margin-left:0;min-width:0}
+.chat-header>.chat-close{flex:0 0 30px;margin-left:8px}
+.chat-panel>.chat-scroll{min-height:0;flex:1}
+.floating-support-mobile{display:none!important}
+.floating-support-mobile svg{width:25px;height:25px}
+
+@media (min-width:901px) {
+  html,body,#root{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+  .app-shell{height:auto;min-height:100vh;overflow:visible}
+  .game-layout{height:auto;min-height:calc(100vh - 117px);overflow:visible;align-items:start}
+  .game-layout .bets-card,.game-layout .chat-panel{height:auto;min-height:calc(100vh - 125px)}
+  .game-layout .center-column{min-height:calc(100vh - 125px)}
+  .game-layout.chat-open .chat-panel{min-height:calc(100vh - 125px)}
+}
+
+@media (max-width:900px) {
+  .top-actions .profile{display:grid!important}
+  .profile-wrap{display:block!important}
+  .chat-header{padding:0 8px}
+  .chat-tabs{gap:2px}
+  .chat-tabs button{padding:7px 6px;font-size:10px}
+  .chat-tabs button small{font-size:8px}
+  .game-layout.chat-open .chat-panel{inset:74px 8px 8px;width:auto;height:auto;max-height:none;min-height:0;overflow:hidden}
+  .game-layout.chat-open .chat-panel .chat-header{flex:0 0 43px}
+  .game-layout.chat-open .chat-panel .chat-scroll{min-height:0;overflow-y:auto}
+  .game-layout.chat-open .chat-panel .chat-input{flex:0 0 69px}
+  .floating-support-mobile{display:grid!important;right:14px;bottom:72px}
+}
+
+@media (max-width:560px) {
+  .top-actions .profile{width:34px;height:34px}
+  .floating-support-mobile{right:10px;bottom:72px;width:46px;height:46px}
+}
+
+.bonus-detail-settings{display:grid;gap:14px;margin-top:16px;padding:18px;border:1px solid #2c3238;border-radius:16px;background:#121518}
+.bonus-detail-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.bonus-detail-heading>div{min-width:0}.bonus-detail-heading span{color:#6ebfff;font-size:9px;font-weight:900;letter-spacing:.13em}.bonus-detail-heading h2{margin:5px 0}.bonus-detail-heading p,.bonus-settings-section header p{margin:4px 0;color:#858d97;font-size:11px;line-height:1.45}
+.bonus-settings-section{display:grid;gap:11px;padding:14px;border:1px solid #2d3339;border-radius:13px;background:#0e1114}.bonus-settings-section header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.bonus-settings-section h3{margin:0;font-size:14px}.bonus-settings-section header button{border:1px solid #3b444d;border-radius:8px;background:#20262b;color:#e1e5e9;padding:8px 10px;cursor:pointer}.bonus-settings-section header button:disabled{opacity:.5;cursor:not-allowed}
+.bonus-level-table{display:grid;gap:5px;overflow-x:auto}.bonus-level-grid{display:grid;grid-template-columns:62px repeat(4,minmax(130px,1fr));gap:7px;min-width:700px}.bonus-level-grid label{display:grid;gap:4px;color:#aeb5be;font-size:10px}.bonus-level-grid input,.monthly-bonus-row input,.bonus-schedule-grid input,.bonus-schedule-grid select{width:100%;border:1px solid #30363d;border-radius:8px;background:#0a0d10;color:#f4f6f8;padding:9px}.bonus-level-heading{padding:0 2px 3px;color:#818994;font-size:10px}.bonus-level-grid input[readonly]{color:#8b929b;background:#171b1f}.mobile-only-label{display:none}
+.monthly-bonus-list{display:grid;gap:8px}.monthly-bonus-row{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr)) 78px;align-items:end;gap:8px}.monthly-bonus-row label,.bonus-schedule-grid label{display:flex;flex-direction:column;gap:5px;color:#aeb5be;font-size:10px}.monthly-bonus-row button{border:0;border-radius:8px;background:#7f263a;color:#fff;padding:9px 8px;cursor:pointer}.monthly-bonus-row button:disabled{opacity:.45;cursor:not-allowed}.bonus-schedule-grid{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:9px}.bonus-schedule-grid .toggle-setting{justify-content:center;align-self:stretch}
+@media(max-width:900px){.bonus-detail-heading{flex-direction:column}.bonus-detail-heading .save-settings{width:100%}.bonus-schedule-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.bonus-detail-settings{padding:12px}.bonus-settings-section{padding:11px}.monthly-bonus-row{grid-template-columns:1fr 1fr}.monthly-bonus-row label:nth-child(3){grid-column:1/-1}.monthly-bonus-row button{grid-column:2}.bonus-schedule-grid{grid-template-columns:1fr}.mobile-only-label{display:block;color:#818994;font-size:9px}}

@@ -9,11 +9,12 @@ type Props = {
   onClose: () => void;
   user: AuthUser;
   onNotify: (message: string, type?: "error" | "success") => void;
+  supportOpenRequest?: number;
 };
 
 const chatAvatars = ["🌋", "🌎", "🪐", "🎭", "🍀", "🌙", "⚡", "🎯"];
 
-export const ChatPanel = memo(function ChatPanel({ chat, online, onClose, user, onNotify }: Props) {
+export const ChatPanel = memo(function ChatPanel({ chat, online, onClose, user, onNotify, supportOpenRequest = 0 }: Props) {
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState<"CHAT" | "SUPPORT">("CHAT");
   const [supportUnread, setSupportUnread] = useState(0);
@@ -24,6 +25,10 @@ export const ChatPanel = memo(function ChatPanel({ chat, online, onClose, user, 
     if (!element) return;
     element.scrollTop = element.scrollHeight;
   }, [chat.length, activeTab]);
+
+  useEffect(() => {
+    if (supportOpenRequest > 0) setActiveTab("SUPPORT");
+  }, [supportOpenRequest]);
 
   const send = () => {
     const trimmed = message.trim();
@@ -37,10 +42,10 @@ export const ChatPanel = memo(function ChatPanel({ chat, online, onClose, user, 
       <header className="chat-header">
         <nav className="chat-tabs" aria-label="Chat sections">
           <button className={activeTab === "CHAT" ? "active" : ""} type="button" onClick={() => setActiveTab("CHAT")}>
-            <span className="online-dot" /> Live chat <small>{online}</small>
+            <span className="online-dot" /> Chat <small>{online}</small>
           </button>
           <button className={activeTab === "SUPPORT" ? "active" : ""} type="button" onClick={() => setActiveTab("SUPPORT")}>
-            Customer support {supportUnread > 0 && <small>{Math.min(supportUnread, 99)}</small>}
+            Support {supportUnread > 0 && <small>{Math.min(supportUnread, 99)}</small>}
           </button>
         </nav>
         <button className="chat-close" type="button" aria-label="Close chat" onClick={onClose}>X</button>
