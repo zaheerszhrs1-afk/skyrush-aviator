@@ -275,7 +275,9 @@ export function registerPlatformFeatures(app: Express, io: Server, engine: GameC
   }));
 
   app.get("/api/content/active", asyncRoute(async (request, response) => {
-    const placement = ["LOGIN", "GAME", "BOTH"].includes(String(request.query.placement)) ? String(request.query.placement) : "GAME";
+    const requestedPlacement = String(request.query.placement);
+    const placement: "LOGIN" | "GAME" | "BOTH" = ["LOGIN", "GAME", "BOTH"].includes(requestedPlacement)
+      ? requestedPlacement as "LOGIN" | "GAME" | "BOTH" : "GAME";
     const now = new Date();
     const items = await ContentCampaignModel.find({
       enabled: true,
@@ -299,8 +301,9 @@ export function registerPlatformFeatures(app: Express, io: Server, engine: GameC
   }));
 
   app.post("/api/reports", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
-    const category = ["ACCOUNT", "PAYMENT", "GAME", "SECURITY", "OTHER"].includes(String(request.body?.category))
-      ? String(request.body.category) : "OTHER";
+    const requestedCategory = String(request.body?.category);
+    const category: "ACCOUNT" | "PAYMENT" | "GAME" | "SECURITY" | "OTHER" = ["ACCOUNT", "PAYMENT", "GAME", "SECURITY", "OTHER"].includes(requestedCategory)
+      ? requestedCategory as "ACCOUNT" | "PAYMENT" | "GAME" | "SECURITY" | "OTHER" : "OTHER";
     const subject = clean(request.body?.subject, 160);
     const description = clean(request.body?.description, 3000);
     if (!subject || description.length < 10) {
@@ -472,8 +475,9 @@ export function registerPlatformFeatures(app: Express, io: Server, engine: GameC
   }));
 
   app.get("/api/admin/reports", requireAdmin, asyncRoute(async (request, response) => {
-    const status = clean(request.query.status, 30);
-    const filter = status && status !== "ALL" ? { status } : {};
+    const requestedStatus = clean(request.query.status, 30);
+    const filter = requestedStatus && requestedStatus !== "ALL"
+      ? { status: requestedStatus as "OPEN" | "IN_REVIEW" | "RESOLVED" | "REJECTED" } : {};
     const reports = await UserReportModel.find(filter).sort({ createdAt: -1 }).populate("userId", "name email avatarUrl status").populate("reviewedBy", "name email").lean();
     response.json({ ok: true, reports });
   }));
