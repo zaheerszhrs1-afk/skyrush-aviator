@@ -451,8 +451,11 @@ const contentCampaignSchema = new Schema(
     title: { type: String, required: true, trim: true, maxlength: 120 },
     body: { type: String, default: "", maxlength: 2000 },
     imageUrl: { type: String, default: "", maxlength: 700 },
+    imageData: { type: String, default: "" },
     linkUrl: { type: String, default: "", maxlength: 700 },
     linkLabel: { type: String, default: "Learn more", maxlength: 60 },
+    linkTarget: { type: String, default: "" },
+    design: { type: Schema.Types.Mixed, default: {} },
     placement: { type: String, enum: ["LOGIN", "GAME", "BOTH"], default: "GAME", index: true },
     enabled: { type: Boolean, default: true, index: true },
     dismissible: { type: Boolean, default: true },
@@ -555,4 +558,3 @@ export const FaqModel = model("Faq", faqSchema);
 export const UserReportModel = model("UserReport", userReportSchema);
 export const NotificationCampaignModel = model("NotificationCampaign", notificationCampaignSchema);
 export const UserNotificationModel = model("UserNotification", userNotificationSchema);
-

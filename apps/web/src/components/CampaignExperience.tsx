@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { apiRequest } from "../lib/api";
+
+export interface CampaignDesign {
+  accentColor?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  align?: "LEFT" | "CENTER";
+  buttonStyle?: "SOLID" | "OUTLINE";
+}
 
 export interface CampaignItem {
   _id: string;
@@ -7,13 +16,37 @@ export interface CampaignItem {
   title: string;
   body: string;
   imageUrl?: string;
+  imageData?: string;
   linkUrl?: string;
   linkLabel?: string;
+  linkTarget?: string;
   dismissible: boolean;
   priority: number;
+  design?: CampaignDesign;
 }
 
 interface Props { placement: "LOGIN" | "GAME"; }
+
+const internalTargets = new Set(["BONUSES", "DEPOSIT", "WITHDRAW", "PROFILE", "FAQS", "LIVE_CHAT"]);
+
+const campaignStyle = (item: CampaignItem): CSSProperties => ({
+  "--campaign-accent": item.design?.accentColor || "#ff6b8d",
+  "--campaign-background": item.design?.backgroundColor || "#181b20",
+  "--campaign-text": item.design?.textColor || "#f5f7fa",
+  textAlign: item.design?.align === "CENTER" ? "center" : "left"
+} as CSSProperties);
+
+function CampaignAction({ item, children }: { item: CampaignItem; children: string }) {
+  const handleInternal = () => {
+    if (!item.linkTarget || !internalTargets.has(item.linkTarget)) return;
+    window.dispatchEvent(new CustomEvent("b9t9:navigate", { detail: item.linkTarget }));
+  };
+  if (item.linkTarget && internalTargets.has(item.linkTarget)) return <button className={`campaign-action ${item.design?.buttonStyle === "OUTLINE" ? "outline" : ""}`} onClick={handleInternal}>{children}</button>;
+  if (item.linkUrl) return <a className={`campaign-action ${item.design?.buttonStyle === "OUTLINE" ? "outline" : ""}`} href={item.linkUrl} target="_blank" rel="noreferrer">{children}</a>;
+  return null;
+}
+
+const imageFor = (item: CampaignItem) => item.imageData || item.imageUrl;
 
 export function CampaignExperience({ placement }: Props) {
   const [items, setItems] = useState<CampaignItem[]>([]);
@@ -33,13 +66,13 @@ export function CampaignExperience({ placement }: Props) {
   const dismiss = (id: string) => setDismissed((current) => new Set([...current, id]));
 
   return <>
-    {banners.length > 0 && <div className="campaign-banner"><div><strong>{banners[0].title}</strong><span>{banners[0].body}</span>{banners[0].linkUrl && <a href={banners[0].linkUrl} target="_blank" rel="noreferrer">{banners[0].linkLabel || "View"}</a>}</div>{banners[0].dismissible && <button onClick={() => dismiss(banners[0]._id)}>×</button>}</div>}
-    {news.length > 0 && <button className="campaign-news-button" onClick={() => setNewsOpen(true)}>📢<span>{news.length}</span></button>}
-    {popup && <div className="campaign-popup-backdrop"><section className="campaign-popup">
-      {popup.imageUrl && <img src={popup.imageUrl} alt="" />}
-      <div><span>{popup.type}</span><h2>{popup.title}</h2><p>{popup.body}</p>{popup.linkUrl && <a href={popup.linkUrl} target="_blank" rel="noreferrer">{popup.linkLabel || "Learn more"}</a>}</div>
-      <button className="campaign-popup-close" onClick={() => dismiss(popup._id)} aria-label="Close announcement">×</button>
+    {banners.length > 0 && <div className="campaign-banner" style={campaignStyle(banners[0])}><div><strong>{banners[0].title}</strong><span>{banners[0].body}</span><CampaignAction item={banners[0]}>{banners[0].linkLabel || "View"}</CampaignAction></div>{banners[0].dismissible && <button onClick={() => dismiss(banners[0]._id)} aria-label="Dismiss banner">X</button>}</div>}
+    {news.length > 0 && <button className="campaign-news-button" onClick={() => setNewsOpen(true)} aria-label="Open announcements and news">News<span>{news.length}</span></button>}
+    {popup && <div className="campaign-popup-backdrop"><section className="campaign-popup" style={campaignStyle(popup)}>
+      {imageFor(popup) && <img src={imageFor(popup)} alt="" />}
+      <div><span>{popup.type}</span><h2>{popup.title}</h2><p>{popup.body}</p><CampaignAction item={popup}>{popup.linkLabel || "Learn more"}</CampaignAction></div>
+      <button className="campaign-popup-close" onClick={() => dismiss(popup._id)} aria-label="Close announcement">X</button>
     </section></div>}
-    {newsOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setNewsOpen(false)}><section className="news-center"><header><div><span>PLATFORM UPDATES</span><h2>Announcements & News</h2></div><button onClick={() => setNewsOpen(false)}>×</button></header><div>{news.map((item) => <article key={item._id}>{item.imageUrl && <img src={item.imageUrl} alt="" />}<div><span>{item.type}</span><h3>{item.title}</h3><p>{item.body}</p>{item.linkUrl && <a href={item.linkUrl} target="_blank" rel="noreferrer">{item.linkLabel || "Read more"}</a>}</div></article>)}</div></section></div>}
+    {newsOpen && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setNewsOpen(false)}><section className="news-center"><header><div><span>PLATFORM UPDATES</span><h2>Announcements & News</h2></div><button onClick={() => setNewsOpen(false)} aria-label="Close news">X</button></header><div>{news.map((item) => <article key={item._id} style={campaignStyle(item)}>{imageFor(item) && <img src={imageFor(item)} alt="" />}<div><span>{item.type}</span><h3>{item.title}</h3><p>{item.body}</p><CampaignAction item={item}>{item.linkLabel || "Read more"}</CampaignAction></div></article>)}</div></section></div>}
   </>;
 }

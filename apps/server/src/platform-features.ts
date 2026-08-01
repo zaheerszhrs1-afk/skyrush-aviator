@@ -374,7 +374,9 @@ export function registerPlatformFeatures(app: Express, io: Server, engine: GameC
       type: ["POPUP", "BANNER", "ANNOUNCEMENT", "NEWS"].includes(String(request.body?.type)) ? request.body.type : "ANNOUNCEMENT",
       title, body: clean(request.body?.body, 2000),
       imageUrl: safeUrl(request.body?.imageUrl, 700), linkUrl: safeUrl(request.body?.linkUrl, 700),
+      imageData: clean(request.body?.imageData, 850_000),
       linkLabel: clean(request.body?.linkLabel, 60) || "Learn more",
+      linkTarget: clean(request.body?.linkTarget, 80), design: request.body?.design ?? {},
       placement: ["LOGIN", "GAME", "BOTH"].includes(String(request.body?.placement)) ? request.body.placement : "GAME",
       enabled: request.body?.enabled !== false, dismissible: request.body?.dismissible !== false,
       priority: Math.min(1000, Math.max(-1000, Number(request.body?.priority ?? 0) || 0)), startsAt,
@@ -396,8 +398,11 @@ export function registerPlatformFeatures(app: Express, io: Server, engine: GameC
     }
     if (Object.prototype.hasOwnProperty.call(body, "body")) update.body = clean(body.body, 2000);
     if (Object.prototype.hasOwnProperty.call(body, "imageUrl")) update.imageUrl = safeUrl(body.imageUrl, 700);
+    if (Object.prototype.hasOwnProperty.call(body, "imageData")) update.imageData = clean(body.imageData, 850_000);
     if (Object.prototype.hasOwnProperty.call(body, "linkUrl")) update.linkUrl = safeUrl(body.linkUrl, 700);
     if (Object.prototype.hasOwnProperty.call(body, "linkLabel")) update.linkLabel = clean(body.linkLabel, 60) || "Learn more";
+    if (Object.prototype.hasOwnProperty.call(body, "linkTarget")) update.linkTarget = clean(body.linkTarget, 80);
+    if (Object.prototype.hasOwnProperty.call(body, "design")) update.design = body.design ?? {};
     if (Object.prototype.hasOwnProperty.call(body, "placement")) {
       update.placement = ["LOGIN", "GAME", "BOTH"].includes(String(body.placement)) ? body.placement : "GAME";
     }

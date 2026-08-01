@@ -6,10 +6,11 @@ interface FinanceModalProps {
   wallet: WalletSnapshot;
   onClose: () => void;
   onWalletRefresh: (wallet: WalletSnapshot) => void;
+  initialTab?: "DEPOSIT" | "WITHDRAW" | "HISTORY";
 }
 
-export function FinanceModal({ wallet, onClose, onWalletRefresh }: FinanceModalProps) {
-  const [tab, setTab] = useState<"DEPOSIT" | "WITHDRAW" | "HISTORY">("DEPOSIT");
+export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "DEPOSIT" }: FinanceModalProps) {
+  const [tab, setTab] = useState<"DEPOSIT" | "WITHDRAW" | "HISTORY">(initialTab);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("Bank Transfer");
   const [reference, setReference] = useState("");
@@ -58,6 +59,7 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh }: FinanceModalP
   useEffect(() => {
     if (tab === "WITHDRAW") void refreshWallet().catch(() => undefined);
   }, [tab]);
+  useEffect(() => { setTab(initialTab); }, [initialTab]);
 
   const refreshWallet = async () => {
     const result = await apiRequest<{ wallet: WalletSnapshot }>("/api/wallet");
