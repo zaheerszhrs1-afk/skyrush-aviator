@@ -522,6 +522,37 @@ export class GameEngine {
       : { ok: true, queued: false, message: "Bet placed with payout liquidity reserved." };
   }
 
+  async cancelQueuedBet(userId: string, slot: BetSlot, mode: AccountMode = "REAL"): Promise<{ ok: boolean; message: string }> {
+    if (mode === "DEMO") return { ok: false, message: "Demo bets cannot be queued for the next round." };
+
+    const queuedDocument = await GameBetModel.findOne({
+      userId,
+      slot,
+      roundId: QUEUED_ROUND_ID,
+      status: "QUEUED"
+    }).lean();
+    if (!queuedDocument) return { ok: false, message: "No queued bet is available to cancel." };
+
+    try {
+      const refunded = await this.refundQueuedBet(queuedDocument, "Cancelled by the player before the next round");
+      if (!refunded) {
+        this.scheduleWalletRefresh(userId);
+        return { ok: false, message: "That queued bet is already being processed." };
+      }
+
+      await this.emitWalletForUser(userId);
+      this.emitState();
+      this.emitToUser(userId, "bet:queue-result", {
+        ok: true,
+        slot,
+        message: "Queued bet cancelled and funds returned to your wallet."
+      });
+      return { ok: true, message: "Queued bet cancelled and funds returned to your wallet." };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : "Unable to cancel queued bet." };
+    }
+  }
+
   async cashOut(userId: string, slot: BetSlot, mode: AccountMode = "REAL"): Promise<{ ok: boolean; message: string }> {
     if (mode === "DEMO") {
       const result = await this.demo.cashOut({
@@ -1062,8 +1093,9 @@ export class GameEngine {
     for (const userId of affectedUsers) await this.emitWalletForUser(userId);
   }
 
-  private async refundQueuedBet(queuedDocument: any, reason: string): Promise<void> {
+  private async refundQueuedBet(queuedDocument: any, reason: string): Promise<boolean> {
     const amountMinor = Number(queuedDocument.amountMinor ?? toMinor(Number(queuedDocument.amount)));
+    let refunded = false;
     let stateAfter: any;
 
     await mongoose.connection.transaction(async (session) => {
@@ -1079,6 +1111,7 @@ export class GameEngine {
         { new: true, session }
       );
       if (!refundedBet) return;
+      refunded = true;
 
       const updatedUser = await UserModel.findOneAndUpdate(
         { _id: queuedDocument.userId, bettingLockedMinor: { $gte: amountMinor } },
@@ -1127,7 +1160,7 @@ export class GameEngine {
           reservedLiquidityAfterMinor: Number(stateAfter.reservedRewardLiquidityMinor),
           lossPoolAfterMinor: Number(stateAfter.lossPoolMinor),
           commissionWalletAfterMinor: Number(stateAfter.commissionWalletMinor),
-          description: `Refunded queued bet of ${fromMinor(amountMinor).toFixed(2)} PKR because it could not be activated`
+          description: `Refunded queued bet of ${fromMinor(amountMinor).toFixed(2)} PKR: ${reason}`
         }],
         { session, ordered: true }
       );
@@ -1142,6 +1175,7 @@ export class GameEngine {
       else this.queuedBets.set(userId, userQueuedBets);
     }
     if (stateAfter) this.updateAccountingCache(stateAfter);
+    return refunded;
   }
 
   private emitToUser(userId: string, event: string, payload: unknown): void {

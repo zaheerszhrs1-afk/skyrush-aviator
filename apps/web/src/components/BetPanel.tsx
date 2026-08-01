@@ -27,7 +27,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
   const [autoCashOut, setAutoCashOut] = useState(false);
   const [autoAt, setAutoAt] = useState(1.1);
   const [message, setMessage] = useState("");
-  const [actionPending, setActionPending] = useState<"place" | "cashout" | null>(null);
+  const [actionPending, setActionPending] = useState<"place" | "cancel" | "cashout" | null>(null);
   const autoPlaceRequestRef = useRef<string | null>(null);
   const autoCashoutRequestRef = useRef<string | null>(null);
   const lastAutoPlaceRef = useRef<string | null>(null);
@@ -58,7 +58,9 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
 
     const walletSynced = actionPending === "place"
       ? Boolean(activeBet || queuedBet)
-      : !activeBet;
+      : actionPending === "cancel"
+        ? !queuedBet
+        : !activeBet;
     if (walletSynced) {
       setActionPending(null);
       return;
@@ -137,6 +139,16 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
   const primaryAction = () => {
     if (actionPending) return;
 
+    if (queuedBet) {
+      setActionPending("cancel");
+      setMessage("Cancelling queued bet...");
+      socket.emit("bet:cancel", { slot, mode: accountMode }, (result: BetActionResult) => {
+        if (!result.ok) setActionPending(null);
+        handleResult(result);
+      });
+      return;
+    }
+
     if (activeBet && roundState.phase === "RUNNING") {
       setActionPending("cashout");
       setMessage(`Cash-out requested at ${payableMultiplier.toFixed(2)}x...`);
@@ -159,6 +171,8 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
   const buttonTitle =
     actionPending === "cashout"
     ? `${prefix}Cashing Out...`
+    : actionPending === "cancel"
+      ? "Cancelling..."
     : actionPending === "place"
       ? `${prefix}Placing...`
       : activeBet && roundState.phase === "RUNNING"
@@ -209,7 +223,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
         <button
           className={`primary-bet ${activeBet && roundState.phase === "RUNNING" ? "cashout" : ""} ${acceptedBet ? "accepted" : ""}`}
           onClick={primaryAction}
-          disabled={Boolean(acceptedBet) || actionPending !== null}
+          disabled={Boolean(actionPending) || Boolean(acceptedBet && !queuedBet)}
           aria-busy={actionPending !== null}
         >
           <span className="primary-bet-label">{buttonTitle}</span>{" "}
