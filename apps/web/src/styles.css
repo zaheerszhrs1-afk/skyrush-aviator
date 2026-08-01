@@ -1992,6 +1992,8 @@ button { color: inherit; }
 @media (max-width:900px) {
   .top-actions .profile{display:grid!important}
   .profile-wrap{display:block!important}
+  .profile-menu{position:fixed;top:70px;right:10px;width:min(260px,calc(100vw - 20px));max-height:calc(100dvh - 82px);overflow-y:auto;overscroll-behavior:contain}
+  .profile-menu button{display:block;width:100%}
   .chat-header{padding:0 8px}
   .chat-tabs{gap:2px}
   .chat-tabs button{padding:7px 6px;font-size:10px}
@@ -2104,3 +2106,7 @@ button { color: inherit; }
   .game-layout .bets-card,.game-layout .chat-panel{height:100%;min-height:0}
   .game-layout .center-column{height:100%;min-height:0;overflow:hidden}
 }
+
+/* Allow the WhatsApp shortcut to be repositioned without triggering a link drag. */
+.floating-whatsapp{touch-action:none;user-select:none;cursor:grab}
+.floating-whatsapp.dragging{cursor:grabbing;transition:none}
