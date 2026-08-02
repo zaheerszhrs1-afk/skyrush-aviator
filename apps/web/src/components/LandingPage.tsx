@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 interface LandingPageProps {
   onLogin: () => void;
   onRegister: () => void;
@@ -9,10 +11,12 @@ const promos = [
 ];
 
 export function LandingPage({ onLogin, onRegister }: LandingPageProps) {
-  return <main className="landing-editorial">
+  const [darkMode, setDarkMode] = useState(false);
+
+  return <main className={`landing-editorial${darkMode ? " is-dark" : ""}`}>
     <header className="editorial-header">
       <a className="editorial-brand" href="/" onClick={(event) => { event.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }}><img src="/b9t9-logo.webp" alt="B9T9" /><span>B9T9</span></a>
-      <div className="editorial-header-meta"><span><i /> LIVE PLAY</span><b>PKR</b><button onClick={onLogin}>SIGN IN</button><button className="editorial-join" onClick={onRegister}>JOIN B9T9</button></div>
+      <div className="editorial-header-meta"><span><i /> LIVE PLAY</span><b>PKR</b><button className="editorial-theme-toggle" type="button" aria-label={darkMode ? "Switch to light mode" : "Switch to dark mode"} aria-pressed={darkMode} onClick={() => setDarkMode((value) => !value)}>{darkMode ? "LIGHT" : "DARK"}</button><button onClick={onLogin}>SIGN IN</button><button className="editorial-join" onClick={onRegister}>JOIN B9T9</button></div>
     </header>
 
     <div className="editorial-ticker"><span>GAME 01</span><strong>AVIATOR</strong><span>ROUND OPEN</span><b>DEMO MODE AVAILABLE</b><em>BET RESPONSIBLY</em></div>
