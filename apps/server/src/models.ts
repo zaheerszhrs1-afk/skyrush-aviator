@@ -57,7 +57,7 @@ const userSchema = new Schema(
     authProvider: { type: String, enum: ["PASSWORD", "GOOGLE", "HYBRID"], default: "PASSWORD" },
     googleSub: { type: String, unique: true, sparse: true, index: true, select: false },
     avatarUrl: { type: String, default: "", maxlength: 500 },
-    phone: { type: String, default: "", maxlength: 40 },
+    phone: { type: String, default: "", maxlength: 40, index: true },
     country: { type: String, default: "Pakistan", maxlength: 80 },
     language: { type: String, default: "English", maxlength: 40 },
     timezone: { type: String, default: "Asia/Karachi", maxlength: 80 },

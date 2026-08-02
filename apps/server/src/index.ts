@@ -12,7 +12,7 @@ import { registerPlatformFeatures } from "./platform-features.js";
 import { reconcile } from "./accounting.js";
 import { fromMinor, toMinor } from "./money.js";
 import type { AccountMode, BetSlot } from "./types.js";
-import { bootstrapAdmin, createAuthSession, destroyAuthSession, hashPassword, optionalAuth, publicUser, requireAdmin, requireAuth, resolveAuthUserFromCookie, verifyPassword, type AuthenticatedRequest } from "./auth.js";
+import { bootstrapAdmin, createAuthSession, destroyAuthSession, hashPassword, isValidPhone, normalizePhone, optionalAuth, publicUser, requireAdmin, requireAuth, resolveAuthUserFromCookie, verifyPassword, type AuthenticatedRequest } from "./auth.js";
 import { connectDatabase, disconnectDatabase } from "./database.js";
 import { createDepositRequest, createNowPaymentsDepositRequest, createWithdrawalRequest, reviewDeposit, reviewWithdrawal, settleNowPaymentsDeposit } from "./finance.js";
 import { createNowPayment, nowPaymentsPublicConfig, verifyNowPaymentsIpn } from "./nowpayments.js";
@@ -83,6 +83,7 @@ app.get("/health", asyncRoute(async (_request, response) => {
 app.post("/api/auth/register", asyncRoute(async (request, response) => {
   const name = cleanText(request.body?.name, 80);
   const email = cleanText(request.body?.email, 160).toLowerCase();
+  const phone = normalizePhone(request.body?.phone);
   const password = String(request.body?.password ?? "");
   if (name.length < 2) {
     response.status(400).json({ ok: false, message: "Name must contain at least 2 characters." });
@@ -90,6 +91,10 @@ app.post("/api/auth/register", asyncRoute(async (request, response) => {
   }
   if (!/^\S+@\S+\.\S+$/.test(email)) {
     response.status(400).json({ ok: false, message: "Enter a valid email address." });
+    return;
+  }
+  if (!isValidPhone(phone)) {
+    response.status(400).json({ ok: false, message: "Enter a valid phone number with country code." });
     return;
   }
   if (password.length < 8) {
@@ -100,10 +105,15 @@ app.post("/api/auth/register", asyncRoute(async (request, response) => {
     response.status(409).json({ ok: false, message: "An account already exists with this email." });
     return;
   }
+  if (await UserModel.exists({ phone })) {
+    response.status(409).json({ ok: false, message: "An account already exists with this phone number." });
+    return;
+  }
 
   const user = await UserModel.create({
     name,
     email,
+    phone,
     passwordHash: await hashPassword(password),
     authProvider: "PASSWORD",
     role: "USER",
@@ -193,11 +203,14 @@ app.post("/api/auth/google", asyncRoute(async (request, response) => {
 }));
 
 app.post("/api/auth/login", asyncRoute(async (request, response) => {
-  const email = cleanText(request.body?.email, 160).toLowerCase();
+  const identifier = cleanText(request.body?.identifier ?? request.body?.email, 160);
+  const email = identifier.toLowerCase();
+  const phone = normalizePhone(identifier);
   const password = String(request.body?.password ?? "");
-  const user = await UserModel.findOne({ email }).select("+passwordHash");
+  const identifiers = identifier.includes("@") ? [{ email }] : phone ? [{ phone }] : [{ email }];
+  const user = await UserModel.findOne({ $or: identifiers }).select("+passwordHash");
   if (!user || !(await verifyPassword(password, String(user.passwordHash)))) {
-    response.status(401).json({ ok: false, message: "Invalid email or password." });
+    response.status(401).json({ ok: false, message: "Invalid email/phone or password." });
     return;
   }
   if (["ADMIN", "SUB_ADMIN"].includes(String(user.role))) {

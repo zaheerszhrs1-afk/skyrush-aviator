@@ -20,6 +20,8 @@ import {
   createAuthSession,
   destroyAuthSession,
   hashPassword,
+  isValidPhone,
+  normalizePhone,
   publicUser,
   requireAdmin,
   requireAuth,
@@ -213,7 +215,7 @@ export function registerPlatformFeatures(app: Express, io: Server, engine: GameC
   app.patch("/api/profile", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
     const update = {
       name: clean(request.body?.name, 80),
-      phone: clean(request.body?.phone, 40),
+      phone: normalizePhone(request.body?.phone),
       country: clean(request.body?.country, 80) || "Pakistan",
       language: clean(request.body?.language, 40) || "English",
       timezone: clean(request.body?.timezone, 80) || "Asia/Karachi",
@@ -225,6 +227,14 @@ export function registerPlatformFeatures(app: Express, io: Server, engine: GameC
     };
     if (update.name.length < 2) {
       response.status(400).json({ ok: false, message: "Name must contain at least 2 characters." });
+      return;
+    }
+    if (update.phone && !isValidPhone(update.phone)) {
+      response.status(400).json({ ok: false, message: "Enter a valid phone number with country code." });
+      return;
+    }
+    if (update.phone && await UserModel.exists({ _id: { $ne: request.authUser!.id }, phone: update.phone })) {
+      response.status(409).json({ ok: false, message: "An account already exists with this phone number." });
       return;
     }
     const user = await UserModel.findByIdAndUpdate(request.authUser!.id, { $set: update }, { new: true });

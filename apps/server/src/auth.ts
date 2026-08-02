@@ -8,6 +8,17 @@ const scryptAsync = promisify(crypto.scrypt);
 const SESSION_COOKIE = "b9t9_session";
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 
+export function normalizePhone(value: unknown): string {
+  let digits = String(value ?? "").trim().slice(0, 40).replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("0") && digits.length === 11) digits = `92${digits.slice(1)}`;
+  return digits ? `+${digits}` : "";
+}
+
+export function isValidPhone(value: string): boolean {
+  return /^\+\d{8,15}$/.test(value);
+}
+
 export interface AuthUser {
   id: string;
   name: string;

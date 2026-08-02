@@ -3,14 +3,15 @@ import { apiRequest } from "../lib/api";
 import type { AuthUser } from "../types";
 import { Logo } from "./Logo";
 
-interface AuthPageProps { onAuthenticated: (user: AuthUser) => void; }
+interface AuthPageProps { onAuthenticated: (user: AuthUser) => void; onBackToLanding?: () => void; initialMode?: "LOGIN" | "REGISTER"; }
 type Mode = "LOGIN" | "REGISTER" | "FORGOT" | "RESET";
 
-export function AuthPage({ onAuthenticated }: AuthPageProps) {
+export function AuthPage({ onAuthenticated, onBackToLanding, initialMode = "LOGIN" }: AuthPageProps) {
   const resetToken = new URLSearchParams(window.location.search).get("token") ?? "";
-  const [mode, setMode] = useState<Mode>(window.location.pathname.startsWith("/reset-password") && resetToken ? "RESET" : "LOGIN");
+  const [mode, setMode] = useState<Mode>(window.location.pathname.startsWith("/reset-password") && resetToken ? "RESET" : initialMode);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -64,7 +65,7 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
         return;
       }
       const result = await apiRequest<{ user: AuthUser }>(mode === "LOGIN" ? "/api/auth/login" : "/api/auth/register", {
-        method: "POST", body: JSON.stringify(mode === "LOGIN" ? { email, password } : { name, email, password })
+        method: "POST", body: JSON.stringify(mode === "LOGIN" ? { identifier: email, password } : { name, email, phone, password })
       });
       onAuthenticated(result.user);
     } catch (error) {
@@ -84,7 +85,8 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
 
       <form onSubmit={submit}>
         {mode === "REGISTER" && <label>Full name<input value={name} onChange={(event) => setName(event.target.value)} required minLength={2} autoComplete="name" /></label>}
-        {mode !== "RESET" && <label>Email<input value={email} onChange={(event) => setEmail(event.target.value)} required type="email" autoComplete="email" /></label>}
+        {mode !== "RESET" && <label>{mode === "LOGIN" ? "Email or phone number" : "Email"}<input value={email} onChange={(event) => setEmail(event.target.value)} required type={mode === "LOGIN" ? "text" : "email"} autoComplete={mode === "LOGIN" ? "username" : "email"} placeholder={mode === "LOGIN" ? "you@example.com or +92..." : undefined} /></label>}
+        {mode === "REGISTER" && <label>Phone number<input value={phone} onChange={(event) => setPhone(event.target.value)} required type="tel" autoComplete="tel" placeholder="+92 300 1234567" /></label>}
         {!["FORGOT"].includes(mode) && <label>{mode === "RESET" ? "New password" : "Password"}<input value={password} onChange={(event) => setPassword(event.target.value)} required type="password" minLength={8} autoComplete={mode === "LOGIN" ? "current-password" : "new-password"} /></label>}
         {mode === "RESET" && <label>Confirm new password<input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required type="password" minLength={8} autoComplete="new-password" /></label>}
         {message && <div className={success ? "form-success" : "form-error"}>{message}</div>}
@@ -93,6 +95,7 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
 
       {mode === "LOGIN" && <button className="auth-forgot" onClick={() => switchMode("FORGOT")}>Forgot password?</button>}
       {mode === "LOGIN" || mode === "REGISTER" ? <button className="auth-switch" onClick={() => switchMode(mode === "LOGIN" ? "REGISTER" : "LOGIN")}>{mode === "LOGIN" ? "Create a new account" : "Already have an account? Sign in"}</button> : <button className="auth-switch" onClick={() => switchMode("LOGIN")}>← Back to sign in</button>}
+      {onBackToLanding && ["LOGIN", "REGISTER"].includes(mode) && <button className="auth-home-link" onClick={onBackToLanding}>← Back to home</button>}
       <button className="admin-login-link" onClick={() => { window.history.replaceState({}, "", "/admin/login"); window.location.reload(); }}>Administrator login</button>
     </section>
   </main>;

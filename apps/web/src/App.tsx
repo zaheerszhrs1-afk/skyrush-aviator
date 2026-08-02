@@ -5,6 +5,7 @@ import { GameGraph } from "./components/GameGraph";
 import { BetPanel } from "./components/BetPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import { AuthPage } from "./components/AuthPage";
+import { LandingPage } from "./components/LandingPage";
 import { AdminLoginPage } from "./components/AdminLoginPage";
 import { FinanceModal } from "./components/FinanceModal";
 import { AdminPanel } from "./components/AdminPanel";
@@ -26,7 +27,7 @@ const adminPath = () => window.location.pathname.startsWith("/admin");
 
 export default function App() {
   const [round, setRound] = useState<RoundSnapshot>(emptyRound); const [wallet, setWallet] = useState<WalletSnapshot>(emptyWallet); const [user, setUser] = useState<AuthUser | null>(null); const [authLoading, setAuthLoading] = useState(true);
-  const [chat, setChat] = useState<ChatItem[]>([]); const [connected, setConnected] = useState(false); const [chatOpen, setChatOpen] = useState(false); const [supportOpenRequest, setSupportOpenRequest] = useState(0); const [financeOpen, setFinanceOpen] = useState(false); const [financeTab, setFinanceTab] = useState<"DEPOSIT" | "WITHDRAW" | "HISTORY">("DEPOSIT"); const [bonusOpen, setBonusOpen] = useState(false);
+  const [chat, setChat] = useState<ChatItem[]>([]); const [connected, setConnected] = useState(false); const [chatOpen, setChatOpen] = useState(false); const [supportOpenRequest, setSupportOpenRequest] = useState(0); const [financeOpen, setFinanceOpen] = useState(false); const [financeTab, setFinanceTab] = useState<"DEPOSIT" | "WITHDRAW" | "HISTORY">("DEPOSIT"); const [bonusOpen, setBonusOpen] = useState(false); const [landingOpen, setLandingOpen] = useState(true); const [authStartMode, setAuthStartMode] = useState<"LOGIN" | "REGISTER">("LOGIN");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false); const [profileCenterOpen, setProfileCenterOpen] = useState(false); const [faqOpen, setFaqOpen] = useState(false); const [notificationsOpen, setNotificationsOpen] = useState(false); const [notificationUnread, setNotificationUnread] = useState(0);
   const [accountMode, setAccountMode] = useState<AccountMode>("REAL"); const [demoResetBusy, setDemoResetBusy] = useState(false); const [historyExpanded, setHistoryExpanded] = useState(false); const [proofRoundId, setProofRoundId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "error" | "success" }>>([]);
@@ -76,7 +77,10 @@ export default function App() {
   if (adminPath() && (!user || user.role === "USER")) {
     return <><CampaignExperience placement="LOGIN" /><AdminLoginPage onAuthenticated={(authenticatedUser) => { setUser(authenticatedUser); window.history.replaceState({}, "", "/admin"); }} /></>;
   }
-  if (!user) return <><CampaignExperience placement="LOGIN" /><AuthPage onAuthenticated={setUser} /></>;
+  if (!user) {
+    const resetRequested = window.location.pathname.startsWith("/reset-password") && Boolean(new URLSearchParams(window.location.search).get("token"));
+    return <><CampaignExperience placement="LOGIN" />{landingOpen && !resetRequested ? <LandingPage onLogin={() => { setAuthStartMode("LOGIN"); setLandingOpen(false); }} onRegister={() => { setAuthStartMode("REGISTER"); setLandingOpen(false); }} /> : <AuthPage initialMode={authStartMode} onAuthenticated={setUser} onBackToLanding={() => setLandingOpen(true)} />}</>;
+  }
   if (["ADMIN", "SUB_ADMIN"].includes(user.role)) {
     return <AdminPanel currentUser={user} onSignOut={() => void adminLogout()} />;
   }
