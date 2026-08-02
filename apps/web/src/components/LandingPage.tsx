@@ -11,7 +11,7 @@ const promos = [
 ];
 
 export function LandingPage({ onLogin, onRegister }: LandingPageProps) {
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(true);
 
   return <main className={`landing-editorial${darkMode ? " is-dark" : ""}`}>
     <header className="editorial-header">

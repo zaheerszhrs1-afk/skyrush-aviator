@@ -42,3 +42,18 @@ export async function sendPasswordResetEmail(input: { email: string; name: strin
     html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:28px;background:#111318;color:#f5f7fa;border-radius:18px"><h2 style="margin-top:0">Reset your B9T9 password</h2><p>Hello ${safeName},</p><p>Use the button below to create a new password. The link expires in 30 minutes.</p><p><a href="${safeResetUrl}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#20b408;color:#fff;text-decoration:none;font-weight:700">Reset password</a></p><p style="color:#9ca3af;font-size:13px">If you did not request this, no action is required.</p></div>`
   });
 }
+
+export async function sendAdminNotificationEmail(input: { email: string; name: string; subject: string; body: string }): Promise<void> {
+  if (!transporter || !smtpFrom) throw new Error("SMTP is not configured. Add SMTP_HOST, SMTP_USER, SMTP_PASS and SMTP_FROM first.");
+
+  const safeName = escapeHtml(input.name);
+  const safeSubject = escapeHtml(input.subject);
+  const safeBody = escapeHtml(input.body).replaceAll("\n", "<br />");
+  await transporter.sendMail({
+    from: smtpFrom,
+    to: input.email,
+    subject: input.subject,
+    text: `Hello ${input.name},\n\n${input.body}\n\nB9T9`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:28px;background:#111318;color:#f5f7fa;border-radius:18px"><p style="margin-top:0;color:#9ca3af">B9T9 notification</p><h2 style="margin:0 0 14px">${safeSubject}</h2><p>Hello ${safeName},</p><p style="line-height:1.6">${safeBody}</p><p style="margin-bottom:0;color:#9ca3af;font-size:13px">You received this message from the B9T9 administration team.</p></div>`
+  });
+}

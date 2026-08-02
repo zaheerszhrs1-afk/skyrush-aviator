@@ -6,6 +6,7 @@ import {
   PlatformAuditModel,
   PlatformSettingsModel,
   PlatformStateModel,
+  FaqModel,
   UserModel,
   WithdrawalRequestModel
 } from "./models.js";
@@ -16,6 +17,22 @@ const safeMinor = (value: unknown): number => {
   const amount = Number(value ?? 0);
   return toMinor(Number.isFinite(amount) ? amount : 0);
 };
+
+const DEFAULT_FAQS = [
+  { question: "How do I create a B9T9 account?", answer: "Choose Register, enter your name, email, phone number and a password, then submit the form. You can use your email or phone number to sign in later.", category: "Account", sortOrder: 10 },
+  { question: "How do I deposit funds?", answer: "Open Wallet & payments, choose Deposit, select an available payment method and follow the instructions shown for your account.", category: "Payments", sortOrder: 20 },
+  { question: "How do I place a bet?", answer: "Choose your stake in the game panel and press Bet before the round starts. You can also use Auto mode when you want the panel to place bets for you.", category: "Game", sortOrder: 30 },
+  { question: "When can I cash out or withdraw?", answer: "During a live round, press Cash Out before the plane leaves. To withdraw, open Wallet & payments and choose Withdraw after your balance and any wagering requirements allow it.", category: "Payments", sortOrder: 40 },
+  { question: "How are B9T9 rounds verified?", answer: "Each round uses a provably-fair crash result. Open the round history and select a result to review its verification details.", category: "Fair play", sortOrder: 50 }
+] as const;
+
+async function seedDefaultFaqs(): Promise<void> {
+  await Promise.all(DEFAULT_FAQS.map((faq) => FaqModel.updateOne(
+    { question: faq.question },
+    { $setOnInsert: { ...faq, enabled: true } },
+    { upsert: true }
+  )));
+}
 
 async function migrateMinorUnitFields(): Promise<void> {
   const users = await UserModel.find({
@@ -413,6 +430,7 @@ export async function connectDatabase(): Promise<void> {
 
   await migrateSettingsVersion();
   await migrateFinanceSettings();
+  await seedDefaultFaqs();
   await migrateMinorUnitFields();
   await migrateWagerTracking();
   await releaseStaleQueuedBetKeys();

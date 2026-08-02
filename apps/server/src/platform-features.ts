@@ -29,7 +29,7 @@ import {
   type AuthenticatedRequest,
   type AuthUser
 } from "./auth.js";
-import { sendPasswordResetEmail } from "./mailer.js";
+import { sendAdminNotificationEmail, sendPasswordResetEmail } from "./mailer.js";
 
 const clean = (value: unknown, max = 1000): string => String(value ?? "").trim().slice(0, max);
 const bool = (value: unknown, fallback = false): boolean => typeof value === "boolean" ? value : fallback;
@@ -577,6 +577,39 @@ export function registerPlatformFeatures(app: Express, io: Server, engine: GameC
     });
     if (sendNow) await deliverNotification(io, campaign, request.authUser!.id);
     response.status(201).json({ ok: true, campaign: await NotificationCampaignModel.findById(campaign._id).lean() });
+  }));
+
+  app.post("/api/admin/notifications/email", requireAdmin, asyncRoute(async (request: AuthenticatedRequest, response) => {
+    const subject = clean(request.body?.subject, 160);
+    const body = clean(request.body?.body, 4000);
+    const targetType = request.body?.targetType === "SELECTED" ? "SELECTED" : "ALL";
+    const userIds = Array.isArray(request.body?.userIds)
+      ? request.body.userIds.filter((id: unknown) => mongoose.Types.ObjectId.isValid(String(id)))
+      : [];
+    if (!subject || !body) { response.status(400).json({ ok: false, message: "Email subject and message are required." }); return; }
+    if (targetType === "SELECTED" && userIds.length === 0) { response.status(400).json({ ok: false, message: "Select at least one email recipient." }); return; }
+
+    const filter = targetType === "SELECTED"
+      ? { _id: { $in: userIds }, role: "USER", status: "ACTIVE" }
+      : { role: "USER", status: "ACTIVE" };
+    const recipients = await UserModel.find(filter).select("name email").lean();
+    if (recipients.length === 0) { response.status(400).json({ ok: false, message: "No active email recipients were found." }); return; }
+
+    let sent = 0;
+    let failed = 0;
+    for (let index = 0; index < recipients.length; index += 25) {
+      const batch = recipients.slice(index, index + 25);
+      await Promise.all(batch.map(async (recipient: any) => {
+        try {
+          await sendAdminNotificationEmail({ email: recipient.email, name: recipient.name, subject, body });
+          sent += 1;
+        } catch {
+          failed += 1;
+        }
+      }));
+    }
+    if (sent === 0) { response.status(502).json({ ok: false, message: "No emails were sent. Check the SMTP configuration." }); return; }
+    response.json({ ok: true, sent, failed, message: failed > 0 ? `Sent ${sent} email${sent === 1 ? "" : "s"}; ${failed} failed.` : `Sent ${sent} email${sent === 1 ? "" : "s"}.` });
   }));
 
   app.patch("/api/admin/notifications/:id/cancel", requireAdmin, asyncRoute(async (request, response) => {
