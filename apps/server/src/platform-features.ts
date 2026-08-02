@@ -590,8 +590,8 @@ export function registerPlatformFeatures(app: Express, io: Server, engine: GameC
     if (targetType === "SELECTED" && userIds.length === 0) { response.status(400).json({ ok: false, message: "Select at least one email recipient." }); return; }
 
     const filter = targetType === "SELECTED"
-      ? { _id: { $in: userIds }, role: "USER", status: "ACTIVE" }
-      : { role: "USER", status: "ACTIVE" };
+      ? { _id: { $in: userIds }, role: "USER" as const, status: "ACTIVE" as const }
+      : { role: "USER" as const, status: "ACTIVE" as const };
     const recipients = await UserModel.find(filter).select("name email").lean();
     if (recipients.length === 0) { response.status(400).json({ ok: false, message: "No active email recipients were found." }); return; }
 
