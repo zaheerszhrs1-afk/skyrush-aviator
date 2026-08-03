@@ -29,16 +29,16 @@ interface NowPaymentInstructions {
 const NOWPAYMENTS_METHOD = "NOWPayments Crypto";
 const JAZZCASH_TILL_ID = "984046332";
 const depositMethods = [
-  { value: "JazzCash", label: "Jazzcash", icon: "JC" },
-  { value: "EasyPaisa", label: "Easypaisa", icon: "EP" },
-  { value: "USDT Manual", label: "Crypto", icon: "₮" },
-  { value: "Bank Transfer", label: "Bank", icon: "⌂" }
+  { value: "JazzCash", label: "Jazzcash", icon: "JC", logo: "/payment-logos/jazzcash.png" },
+  { value: "EasyPaisa", label: "Easypaisa", icon: "EP", logo: "/payment-logos/easypaisa.png" },
+  { value: "USDT Manual", label: "Crypto", icon: "CRYPTO", logo: "/payment-logos/crypto.png" },
+  { value: "Bank Transfer", label: "Bank", icon: "BANK", logo: "" }
 ];
 const withdrawalMethods = [
-  { value: "EasyPaisa", label: "Easypaisa", icon: "EP" },
-  { value: "JazzCash", label: "Jazzcash", icon: "JC" },
-  { value: "Bank Transfer", label: "Bank", icon: "⌂" },
-  { value: "USDT Manual", label: "USDT", icon: "₮" }
+  { value: "EasyPaisa", label: "Easypaisa", icon: "EP", logo: "/payment-logos/easypaisa.png" },
+  { value: "JazzCash", label: "Jazzcash", icon: "JC", logo: "/payment-logos/jazzcash.png" },
+  { value: "Bank Transfer", label: "Bank", icon: "BANK", logo: "" },
+  { value: "USDT Manual", label: "USDT", icon: "CRYPTO", logo: "/payment-logos/crypto.png" }
 ];
 const depositQuickAmounts = [100, 300, 500, 1_000, 3_000, 5_000, 10_000, 30_000, 50_000];
 
@@ -177,7 +177,7 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
 
         {tab === "DEPOSIT" && (
           <form className="finance-form finance-reference-form" onSubmit={submitDeposit}>
-            <div className="finance-methods">{[...depositMethods, ...(nowPayments.enabled ? [{ value: NOWPAYMENTS_METHOD, label: "NOW Crypto", icon: "N" }] : [])].map((item) => <button type="button" key={item.value} className={`finance-method ${method === item.value ? "active" : ""}`} onClick={() => selectMethod(item.value)}><strong>{item.icon}</strong><span>{item.label}</span></button>)}</div>
+            <div className="finance-methods">{[...depositMethods, ...(nowPayments.enabled ? [{ value: NOWPAYMENTS_METHOD, label: "NOW Crypto", icon: "N", logo: "/payment-logos/crypto.png" }] : [])].map((item) => <button type="button" key={item.value} className={`finance-method ${method === item.value ? "active" : ""}`} onClick={() => selectMethod(item.value)}>{item.logo ? <img src={item.logo} alt="" /> : <strong>{item.icon}</strong>}<span>{item.label}</span></button>)}</div>
             <div className="finance-section-label">Select amount</div>
             <div className="finance-quick-amounts">{depositQuickAmounts.map((value) => <button type="button" key={value} className={Number(amount) === value ? "active" : ""} onClick={() => { setAmount(String(value)); setCryptoPayment(null); }}>{value.toLocaleString()}</button>)}</div>
             <label className="finance-input-label">Deposit amount<input type="number" min={financeSettings.minDeposit} step="0.01" placeholder="PKR" value={amount} onChange={(event) => { setAmount(event.target.value); setCryptoPayment(null); }} required /></label>
@@ -200,7 +200,7 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
         {tab === "WITHDRAW" && (
           <form className="finance-form finance-reference-form" onSubmit={submitWithdrawal}>
             <div className="finance-balance-summary"><div><strong>{formatMoney(wallet.balance)}</strong><span>Cash balance</span></div><div><strong>{formatMoney(Math.max(0, wallet.balance - wallet.pendingRewards))}</strong><span>Withdrawable</span></div></div>
-            <div className="finance-methods finance-withdraw-methods">{withdrawalMethods.map((item) => <button type="button" key={item.value} className={`finance-method ${method === item.value ? "active" : ""}`} onClick={() => selectMethod(item.value)}><strong>{item.icon}</strong><span>{item.label}</span></button>)}</div>
+            <div className="finance-methods finance-withdraw-methods">{withdrawalMethods.map((item) => <button type="button" key={item.value} className={`finance-method ${method === item.value ? "active" : ""}`} onClick={() => selectMethod(item.value)}>{item.logo ? <img src={item.logo} alt="" /> : <strong>{item.icon}</strong>}<span>{item.label}</span></button>)}</div>
             <label className="finance-input-label">Choose account<textarea value={details} onChange={(event) => setDetails(event.target.value)} placeholder="Add your wallet, bank or account details" required rows={3} /></label>
             <button type="button" className="finance-add-account" onClick={() => setDetails("")}>Add new account</button>
             <label className="finance-input-label">Withdrawal amount ({financeSettings.minWithdrawal.toLocaleString()} - {formatMoney(wallet.balance)} PKR)<input type="number" min={financeSettings.minWithdrawal} max={wallet.balance} step="0.01" placeholder="Withdrawal amount" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>

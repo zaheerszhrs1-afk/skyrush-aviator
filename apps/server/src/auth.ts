@@ -33,7 +33,6 @@ export interface AuthUser {
   wagerRequirementTarget: number;
   wagerRequirementCompleted: number;
   totalBalance: number;
-  demoBalance: number;
   authProvider: AuthProvider;
   avatarUrl: string;
   phone: string;
@@ -100,10 +99,6 @@ export function publicUser(document: any): AuthUser {
   const wagerCompletedMinor = Number.isSafeInteger(Number(document?.wagerCompletedMinor))
     ? Math.min(wagerTargetMinor, Math.max(0, Number(document.wagerCompletedMinor)))
     : Math.max(0, wagerTargetMinor - wagerRequirementMinor);
-  const demoBalanceMinor = Number.isSafeInteger(Number(document?.demoBalanceMinor))
-    ? Number(document.demoBalanceMinor)
-    : 0;
-
   return {
     id: String(document._id),
     name: String(document.name),
@@ -118,7 +113,6 @@ export function publicUser(document: any): AuthUser {
     wagerRequirementTarget: fromMinor(wagerTargetMinor),
     wagerRequirementCompleted: fromMinor(wagerCompletedMinor),
     totalBalance: fromMinor(balanceMinor + withdrawalLockedMinor + bettingLockedMinor + pendingRewardsMinor),
-    demoBalance: fromMinor(demoBalanceMinor),
     authProvider: (document.authProvider ?? "PASSWORD") as AuthProvider,
     avatarUrl: String(document.avatarUrl ?? ""),
     phone: String(document.phone ?? ""),
@@ -277,7 +271,6 @@ export async function bootstrapAdmin(): Promise<void> {
     withdrawalLockedMinor: 0,
     bettingLockedMinor: 0,
     pendingRewardsMinor: 0,
-    demoBalanceMinor: 0,
     balance: 0,
     lockedBalance: 0
   });

@@ -45,13 +45,12 @@ async function migrateMinorUnitFields(): Promise<void> {
       { wagerTargetMinor: { $exists: false } },
       { wagerCompletedMinor: { $exists: false } },
       { wagerTrackingVersion: { $exists: false } },
-      { demoBalanceMinor: { $exists: false } },
       { authProvider: { $exists: false } },
       { vipLevel: { $exists: false } },
       { vipLifetimeDepositMinor: { $exists: false } },
       { vipLifetimeValidBetMinor: { $exists: false } }
     ]
-  }).select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor wagerRequirementMinor wagerTargetMinor wagerCompletedMinor wagerTrackingVersion demoBalanceMinor authProvider role vipLevel vipLifetimeDepositMinor vipLifetimeValidBetMinor").lean();
+  }).select("balance lockedBalance balanceMinor withdrawalLockedMinor bettingLockedMinor pendingRewardsMinor wagerRequirementMinor wagerTargetMinor wagerCompletedMinor wagerTrackingVersion authProvider role vipLevel vipLifetimeDepositMinor vipLifetimeValidBetMinor").lean();
 
   if (users.length > 0) {
     await UserModel.bulkWrite(users.map((user: any) => ({
@@ -71,11 +70,6 @@ async function migrateMinorUnitFields(): Promise<void> {
               : (Number.isSafeInteger(Number(user.wagerRequirementMinor)) ? Number(user.wagerRequirementMinor) : 0),
             wagerCompletedMinor: Number.isSafeInteger(Number(user.wagerCompletedMinor)) ? Number(user.wagerCompletedMinor) : 0,
             wagerTrackingVersion: Number.isFinite(Number(user.wagerTrackingVersion)) ? Number(user.wagerTrackingVersion) : 0,
-            demoBalanceMinor: Number.isSafeInteger(Number(user.demoBalanceMinor))
-              ? Number(user.demoBalanceMinor)
-              : user.role === "ADMIN"
-                ? 0
-                : toMinor(Number(process.env.DEMO_STARTING_BALANCE ?? 100_000)),
             authProvider: user.authProvider ?? "PASSWORD",
             vipLevel: Number.isFinite(Number(user.vipLevel)) ? Number(user.vipLevel) : 0,
             vipLifetimeDepositMinor: Number.isSafeInteger(Number(user.vipLifetimeDepositMinor)) ? Number(user.vipLifetimeDepositMinor) : 0,

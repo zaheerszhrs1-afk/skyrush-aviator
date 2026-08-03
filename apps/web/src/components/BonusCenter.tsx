@@ -133,7 +133,7 @@ export function BonusCenter({ onClose, onNotify }: BonusCenterProps) {
                     </div>
                   ))}
                 </div>
-                <div className="bonus-rules"><h3>Rules</h3><ol><li>Each VIP level upgrade reward can be claimed once only.</li><li>VIP progress uses approved real deposits and settled real-money bets.</li><li>Demo bets, refunded bets and rejected deposits do not count.</li></ol></div>
+                <div className="bonus-rules"><h3>Rules</h3><ol><li>Each VIP level upgrade reward can be claimed once only.</li><li>VIP progress uses approved real deposits and settled real-money bets.</li><li>Refunded bets and rejected deposits do not count.</li></ol></div>
               </section>
             )}
 

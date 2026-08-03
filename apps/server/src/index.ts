@@ -11,7 +11,7 @@ import { GameEngine } from "./game-engine.js";
 import { registerPlatformFeatures } from "./platform-features.js";
 import { reconcile } from "./accounting.js";
 import { fromMinor, toMinor } from "./money.js";
-import type { AccountMode, BetSlot } from "./types.js";
+import type { BetSlot } from "./types.js";
 import { bootstrapAdmin, createAuthSession, destroyAuthSession, hashPassword, isValidPhone, normalizePhone, optionalAuth, publicUser, requireAdmin, requireAuth, resolveAuthUserFromCookie, verifyPassword, type AuthenticatedRequest } from "./auth.js";
 import { connectDatabase, disconnectDatabase } from "./database.js";
 import { createDepositRequest, createNowPaymentsDepositRequest, createWithdrawalRequest, reviewDeposit, reviewWithdrawal, settleNowPaymentsDeposit } from "./finance.js";
@@ -49,7 +49,6 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN ?? "")
 const corsOrigin = allowedOrigins.length > 0 ? allowedOrigins : true;
 const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim() ?? "";
 const googleClient = new OAuth2Client(googleClientId || undefined);
-const demoStartingBalanceMinor = toMinor(Number(process.env.DEMO_STARTING_BALANCE ?? 100_000));
 
 const asyncRoute = (handler: (request: any, response: Response, next: NextFunction) => Promise<void>) =>
   (request: Request, response: Response, next: NextFunction) => void handler(request, response, next).catch(next);
@@ -126,7 +125,6 @@ app.post("/api/auth/register", asyncRoute(async (request, response) => {
     wagerTargetMinor: 0,
     wagerCompletedMinor: 0,
     wagerTrackingVersion: 2,
-    demoBalanceMinor: demoStartingBalanceMinor,
     balance: 0,
     lockedBalance: 0
   });
@@ -181,7 +179,6 @@ app.post("/api/auth/google", asyncRoute(async (request, response) => {
       wagerTargetMinor: 0,
       wagerCompletedMinor: 0,
       wagerTrackingVersion: 2,
-      demoBalanceMinor: demoStartingBalanceMinor,
       balance: 0,
       lockedBalance: 0,
       lastLoginAt: new Date()
@@ -335,15 +332,6 @@ app.get("/api/finance/settings", requireAuth, asyncRoute(async (_request, respon
       withdrawalsEnabled: (settings as any)?.withdrawalsEnabled !== false
     }
   });
-}));
-
-app.post("/api/demo/reset", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
-  if (request.authUser!.role !== "USER") {
-    response.status(403).json({ ok: false, message: "Demo mode is available to user accounts only." });
-    return;
-  }
-  const wallet = await engine.resetDemoBalance(request.authUser!.id);
-  response.json({ ok: true, wallet });
 }));
 
 app.get("/api/wallet/transactions", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
@@ -1125,22 +1113,19 @@ io.on("connection", async (socket) => {
     return;
   }
 
-  socket.on("bet:place", async (payload: { slot?: BetSlot; amount?: number; mode?: AccountMode }, acknowledge?: (result: unknown) => void) => {
+  socket.on("bet:place", async (payload: { slot?: BetSlot; amount?: number }, acknowledge?: (result: unknown) => void) => {
     const slot = payload?.slot === "right" ? "right" : "left";
-    const mode: AccountMode = payload?.mode === "DEMO" ? "DEMO" : "REAL";
-    acknowledge?.(await engine.placeBet(authUser.id, slot, Number(payload?.amount), mode, authUser.name));
+    acknowledge?.(await engine.placeBet(authUser.id, slot, Number(payload?.amount), authUser.name));
   });
 
-  socket.on("bet:cancel", async (payload: { slot?: BetSlot; mode?: AccountMode }, acknowledge?: (result: unknown) => void) => {
+  socket.on("bet:cancel", async (payload: { slot?: BetSlot }, acknowledge?: (result: unknown) => void) => {
     const slot = payload?.slot === "right" ? "right" : "left";
-    const mode: AccountMode = payload?.mode === "DEMO" ? "DEMO" : "REAL";
-    acknowledge?.(await engine.cancelQueuedBet(authUser.id, slot, mode));
+    acknowledge?.(await engine.cancelQueuedBet(authUser.id, slot));
   });
 
-  socket.on("bet:cashout", async (payload: { slot?: BetSlot; mode?: AccountMode }, acknowledge?: (result: unknown) => void) => {
+  socket.on("bet:cashout", async (payload: { slot?: BetSlot }, acknowledge?: (result: unknown) => void) => {
     const slot = payload?.slot === "right" ? "right" : "left";
-    const mode: AccountMode = payload?.mode === "DEMO" ? "DEMO" : "REAL";
-    acknowledge?.(await engine.cashOut(authUser.id, slot, mode));
+    acknowledge?.(await engine.cashOut(authUser.id, slot));
   });
 
   socket.on("chat:send", async (payload: { message?: string }) => {

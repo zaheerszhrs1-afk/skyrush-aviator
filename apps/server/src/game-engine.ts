@@ -3,7 +3,6 @@ import mongoose from "mongoose";
 import type { Server } from "socket.io";
 import { calculateMaximumLiability, calculatePayout } from "./accounting.js";
 import { getWalletSnapshot } from "./finance.js";
-import { DemoEngine } from "./demo-engine.js";
 import { BotEngine } from "./bot-engine.js";
 import {
   GameBetModel,
@@ -16,7 +15,7 @@ import {
   type TransactionType
 } from "./models.js";
 import { fromMinor, minorFromDocument, toMinor } from "./money.js";
-import type { AccountMode, BetSlot, PublicBet, RoundHistoryItem, RoundPhase, RoundSnapshot, RoundTick, WalletSnapshot } from "./types.js";
+import type { BetSlot, PublicBet, RoundHistoryItem, RoundPhase, RoundSnapshot, RoundTick, WalletSnapshot } from "./types.js";
 
 const WAITING_MS = 8_000;
 const CRASHED_MS = 3_000;
@@ -160,7 +159,6 @@ function wageringState(user: any, stakeMinor: number): {
 
 export class GameEngine {
   private readonly io: Server;
-  private readonly demo = new DemoEngine();
   private readonly bots = new BotEngine();
   private phase: RoundPhase = "WAITING";
   private roundId = crypto.randomUUID();
@@ -191,7 +189,6 @@ export class GameEngine {
 
   async initialize(): Promise<void> {
     await this.recoverInterruptedBets();
-    await this.demo.initialize();
     const recentRounds = await GameRoundModel.find({ phase: "CRASHED" })
       .sort({ crashedAt: -1 })
       .limit(30)
@@ -240,10 +237,8 @@ export class GameEngine {
       commit: this.commit,
       history: this.history,
       bets: [...this.bets, ...this.bots.getPublicBets()].sort((a, b) => b.amount - a.amount).slice(0, 120),
-      demoBets: this.demo.getPublicBets(),
       online: this.socketUsers.size,
       automatedOnline: this.bots.getAutomatedParticipantCount(),
-      demoOnline: this.demo.getOnlineCount(this.socketUsers.size),
       houseEdgePercent: this.settings.houseEdgePercent,
       lossPool: fromMinor(this.cachedLossPoolMinor),
       commissionPercent: this.settings.commissionPercent,
@@ -294,8 +289,6 @@ export class GameEngine {
       ...wallet,
       activeBets: this.activeBets.get(userId) ?? {},
       queuedBets,
-      demoBalance: await this.demo.getBalance(userId),
-      demoActiveBets: this.demo.getActiveBets(userId)
     };
   }
 
@@ -303,23 +296,8 @@ export class GameEngine {
     userId: string,
     slot: BetSlot,
     amountInput: number,
-    mode: AccountMode = "REAL",
     playerName?: string
   ): Promise<{ ok: boolean; message: string; queued?: boolean }> {
-    if (mode === "DEMO") {
-      const result = await this.demo.placeBet({
-        userId,
-        slot,
-        amount: amountInput,
-        phase: this.phase,
-        settings: this.settings
-      });
-      if (result.ok) {
-        this.emitState();
-        this.scheduleWalletRefresh(userId);
-      }
-      return result;
-    }
     const queueForNextRound = this.phase !== "WAITING";
     if (!Number.isFinite(amountInput)) return { ok: false, message: "Invalid bet amount." };
 
@@ -526,9 +504,7 @@ export class GameEngine {
       : { ok: true, queued: false, message: "Bet placed with payout liquidity reserved." };
   }
 
-  async cancelQueuedBet(userId: string, slot: BetSlot, mode: AccountMode = "REAL"): Promise<{ ok: boolean; message: string }> {
-    if (mode === "DEMO") return { ok: false, message: "Demo bets cannot be queued for the next round." };
-
+  async cancelQueuedBet(userId: string, slot: BetSlot): Promise<{ ok: boolean; message: string }> {
     const queuedDocument = await GameBetModel.findOne({
       userId,
       slot,
@@ -557,21 +533,7 @@ export class GameEngine {
     }
   }
 
-  async cashOut(userId: string, slot: BetSlot, mode: AccountMode = "REAL"): Promise<{ ok: boolean; message: string }> {
-    if (mode === "DEMO") {
-      const result = await this.demo.cashOut({
-        userId,
-        slot,
-        phase: this.phase,
-        multiplier: this.multiplier,
-        settings: this.settings
-      });
-      if (result.ok) {
-        this.emitState();
-        this.scheduleWalletRefresh(userId);
-      }
-      return result;
-    }
+  async cashOut(userId: string, slot: BetSlot): Promise<{ ok: boolean; message: string }> {
     const bet = this.activeBets.get(userId)?.[slot];
     if (!bet) return { ok: false, message: "No active bet found." };
     if (this.phase !== "RUNNING") return { ok: false, message: "Cash-out is available while the plane is flying." };
@@ -770,13 +732,6 @@ export class GameEngine {
     return { ok: true, message: `Cashed out at ${lockedMultiplier.toFixed(2)}x.` };
   }
 
-  async resetDemoBalance(userId: string): Promise<WalletSnapshot> {
-    await this.demo.resetBalance(userId);
-    const wallet = await this.getWallet(userId);
-    await this.emitWalletForUser(userId);
-    return wallet;
-  }
-
   private scheduleWalletRefresh(userId: string): void {
     if (this.pendingWalletRefreshes.has(userId)) return;
     this.pendingWalletRefreshes.add(userId);
@@ -883,14 +838,11 @@ export class GameEngine {
         this.emitTick();
       }
 
-      this.demo.onTick(this.phase, this.multiplier);
       this.bots.onTick(this.phase, this.multiplier);
 
       if (this.phase === "CRASHED" && !this.roundSettled) {
         await this.settleLosses();
         this.bots.settleLosses();
-        const affectedDemoUsers = await this.demo.settleLosses(this.roundId);
-        for (const userId of affectedDemoUsers) this.scheduleWalletRefresh(userId);
         this.roundSettled = true;
         this.phaseEndsAt = Date.now() + CRASHED_MS;
         this.history = [{
@@ -955,7 +907,6 @@ export class GameEngine {
     this.activeBets.clear();
     this.roundSettled = false;
 
-    await this.demo.prepareRound(this.roundId, this.settings);
     this.bots.prepareRound(this.roundId, this.settings);
 
     await GameRoundModel.create({

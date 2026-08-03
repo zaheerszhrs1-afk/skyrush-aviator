@@ -527,7 +527,7 @@ export function registerPlatformFeatures(app: Express, io: Server, engine: GameC
     const user = await UserModel.create({
       name, email, passwordHash: await hashPassword(password), authProvider: "PASSWORD", role: "SUB_ADMIN",
       status: "ACTIVE", adminPermissions: permissions, balanceMinor: 0, withdrawalLockedMinor: 0,
-      bettingLockedMinor: 0, pendingRewardsMinor: 0, demoBalanceMinor: 0, balance: 0, lockedBalance: 0
+      bettingLockedMinor: 0, pendingRewardsMinor: 0, balance: 0, lockedBalance: 0
     });
     response.status(201).json({ ok: true, user: publicUser(user) });
   }));

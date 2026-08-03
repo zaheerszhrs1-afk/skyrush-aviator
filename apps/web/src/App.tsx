@@ -20,8 +20,8 @@ import { socket } from "./lib/socket";
 import type { AccountMode, AuthUser, ChatItem, RoundSnapshot, WalletSnapshot } from "./types";
 import "./styles.css";
 
-const emptyRound: RoundSnapshot = { roundId: "loading", phase: "WAITING", multiplier: 1, phaseEndsAt: Date.now() + 8000, startedAt: null, commit: "", history: [], bets: [], demoBets: [], online: 0, automatedOnline: 75, demoOnline: 75, houseEdgePercent: 1, lossPool: 0, commissionPercent: 10, activeBetEscrow: 0, reservedRewardLiquidity: 0, availableRewardLiquidity: 0, testMode: false };
-const emptyWallet: WalletSnapshot = { balance: 0, lockedBalance: 0, bettingLockedBalance: 0, pendingRewards: 0, wagerRequirementRemaining: 0, wagerRequirementTarget: 0, wagerRequirementCompleted: 0, totalBalance: 0, activeBets: {}, queuedBets: {}, demoBalance: 0, demoActiveBets: {} };
+const emptyRound: RoundSnapshot = { roundId: "loading", phase: "WAITING", multiplier: 1, phaseEndsAt: Date.now() + 8000, startedAt: null, commit: "", history: [], bets: [], online: 0, automatedOnline: 75, houseEdgePercent: 1, lossPool: 0, commissionPercent: 10, activeBetEscrow: 0, reservedRewardLiquidity: 0, availableRewardLiquidity: 0, testMode: false };
+const emptyWallet: WalletSnapshot = { balance: 0, lockedBalance: 0, bettingLockedBalance: 0, pendingRewards: 0, wagerRequirementRemaining: 0, wagerRequirementTarget: 0, wagerRequirementCompleted: 0, totalBalance: 0, activeBets: {}, queuedBets: {} };
 const adminPath = () => window.location.pathname.startsWith("/admin");
 
 export default function App() {
@@ -63,12 +63,12 @@ export default function App() {
     return () => { socket.off("round:state", onRound); socket.off("wallet:state", onWallet); socket.off("wallet:patch", onWalletPatch); socket.off("chat:history", onHistory); socket.off("chat:new", onChat); socket.off("connect", onConnect); socket.off("disconnect", onDisconnect); socket.off("connect_error", onDisconnect); socket.off("bet:queue-result", onQueueResult); socket.off("notification:new", onNotification); socket.disconnect(); };
   }, [notify, user?.id]);
 
-  const statusLabel = useMemo(() => connected ? "Live" : "Reconnecting", [connected]); const visibleBets = accountMode === "DEMO" ? round.demoBets : round.bets; const visibleOnline = accountMode === "DEMO" ? round.demoOnline : round.online; const visibleBalance = accountMode === "DEMO" ? wallet.demoBalance : wallet.balance;
+  const statusLabel = useMemo(() => connected ? "Live" : "Reconnecting", [connected]); const visibleBets = round.bets; const visibleOnline = round.online; const visibleBalance = wallet.balance;
 
   const clearSession = () => { socket.disconnect(); setUser(null); setWallet(emptyWallet); setAccountMode("REAL"); setProfileMenuOpen(false); };
   const logout = async () => { await apiRequest("/api/auth/logout", { method: "POST" }).catch(() => undefined); clearSession(); window.history.replaceState({}, "", "/"); };
   const adminLogout = async () => { await apiRequest("/api/admin/auth/logout", { method: "POST" }).catch(() => undefined); clearSession(); window.history.replaceState({}, "", "/admin/login"); };
-  const resetDemo = async () => { setDemoResetBusy(true); try { const result = await apiRequest<{ wallet: WalletSnapshot }>("/api/demo/reset", { method: "POST" }); setWallet(result.wallet); } catch (error) { notify(error instanceof Error ? error.message : "Unable to reset demo balance."); } finally { setDemoResetBusy(false); } };
+  const resetDemo = async () => { setDemoResetBusy(true); notify("Demo mode is no longer available."); setDemoResetBusy(false); };
   const historyStrip = useMemo(() => <div className={`history-strip ${historyExpanded ? "expanded" : ""}`}><div className="history-values">{round.history.map((item) => <button className={`history-value ${item.crashPoint < 2 ? "blue" : item.crashPoint < 10 ? "purple" : "pink"}`} key={item.roundId} type="button" title={`Open proof for ${item.crashPoint.toFixed(2)}x`} onClick={() => setProofRoundId(item.roundId)}>{item.crashPoint.toFixed(2)}x</button>)}</div><small className="edge-label">House edge {round.houseEdgePercent.toFixed(2)}%</small><button className="history-expand" type="button" aria-expanded={historyExpanded} onClick={() => setHistoryExpanded((value) => !value)}>{historyExpanded ? "×" : "•••"}</button></div>, [historyExpanded, round.history, round.houseEdgePercent]);
 
   if (authLoading) return <div className="app-loading">Loading secure session…</div>;

@@ -79,7 +79,7 @@ export function AuthPage({ onAuthenticated, onBackToLanding, initialMode = "LOGI
     <section className="auth-card">
       <div className="auth-brand"><Logo /></div>
       <h1>{title}</h1>
-      <p>{mode === "FORGOT" ? "Enter your email and we will send a secure reset link." : mode === "RESET" ? "Create a strong password for your account." : "Secure access to your wallet, real bets and risk-free demo play."}</p>
+      <p>{mode === "FORGOT" ? "Enter your email and we will send a secure reset link." : mode === "RESET" ? "Create a strong password for your account." : "Secure access to your wallet and real bets."}</p>
 
       {mode === "LOGIN" && googleClientId && <><div className="google-login-wrap" aria-busy={busy}><div ref={googleButton} /><small>Google sign-in is available for user accounts only.</small></div><div className="auth-divider"><span>or use email</span></div></>}
 

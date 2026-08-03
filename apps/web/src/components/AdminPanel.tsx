@@ -60,7 +60,7 @@ const money = (value: number) => `${Number(value || 0).toLocaleString(undefined,
 const person = (value: any) => !value ? "System" : typeof value === "string" ? value : `${value.name} (${value.email})`;
 const blankFaq = (): Omit<Faq, "_id"> => ({ question: "", answer: "", category: "General", enabled: true, sortOrder: 0 });
 const notificationPresets = [
-  { code: "WELCOME", title: "Welcome to B9T9", body: "Your account is ready. Start in demo mode to learn the round before using real funds." },
+  { code: "WELCOME", title: "Welcome to B9T9", body: "Your account is ready. Fund your wallet to start playing." },
   { code: "BONUS", title: "Your bonus is available", body: "A new bonus is waiting in your VIP bonuses center. Open it to review the terms and claim window." },
   { code: "DEPOSIT", title: "Deposit received", body: "Your deposit request has been received. We will update your wallet when the payment is confirmed." },
   { code: "WITHDRAWAL", title: "Withdrawal update", body: "Your withdrawal request has been reviewed. Open Wallet & payments to see the latest status." },

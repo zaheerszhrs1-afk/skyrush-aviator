@@ -1971,9 +1971,9 @@ button { color: inherit; }
 .balance-amount { border:0; padding:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
 .balance-amount:hover strong { color:#a5f5b0; }
 .guest-auth-button.guest-auth-primary { background:#20ad12!important; border-color:#31c52a!important; color:#fff!important; }
-.guest-auth-modal { z-index:600; }
-.guest-auth-modal>.auth-page { width:min(430px,calc(100vw - 28px)); min-height:0; background:transparent; }
-.guest-auth-modal>.auth-page .auth-card { width:100%; max-height:calc(100vh - 36px); overflow:auto; }
+.guest-auth-modal { z-index:600; display:flex; align-items:center; justify-content:center; overflow-y:auto; padding:16px; }
+.guest-auth-modal>.auth-page { width:min(460px,100%); min-height:0; max-height:calc(100dvh - 32px); padding:0; overflow:visible; background:transparent; }
+.guest-auth-modal>.auth-page .auth-card { width:100%; max-height:calc(100dvh - 32px); overflow-y:auto; padding:28px; }
 .guest-auth-close { position:fixed; z-index:1; top:20px; right:24px; width:36px; height:36px; border:1px solid #454b54; border-radius:50%; background:#15181d; color:#fff; font-size:24px; line-height:1; cursor:pointer; }
 .chat-auth-prompt { display:flex; flex-direction:column; gap:9px; align-items:center; justify-content:center; min-height:220px; padding:24px; text-align:center; color:#9aa2ad; }
 .chat-auth-prompt strong { color:#f0f3f5; font-size:14px; }
@@ -2043,6 +2043,10 @@ button { color: inherit; }
 .finance-withdraw-summary div:last-child strong { color:#f3c547; }
 @media(max-width:900px){.guest-auth-button{display:inline-flex!important;font-size:11px!important;padding:7px 8px!important}.admin-header-actions{gap:7px}.admin-reminder-menu{right:-4px}.jazzcash-payment-card img{max-height:280px}}
 @media(max-width:560px){.guest-auth-close{top:10px;right:10px}.till-id-row{align-items:flex-start;flex-direction:column}.till-id-row button{width:100%}.admin-reminder-menu{position:fixed;top:68px;right:10px}.admin-header-actions>button:last-child{padding:8px 10px}.finance-modal{border-radius:8px}.finance-methods{gap:7px}.finance-method strong{width:48px;height:48px}.finance-method span{font-size:10px}.finance-reference-form{padding-left:14px;padding-right:14px}}
+.finance-method img { width:52px; height:52px; padding:5px; border:5px solid #343b3f; border-radius:12px; background:#ebf5e8; object-fit:contain; }
+.finance-method.active img { border-color:#30ec85; box-shadow:0 0 0 2px rgba(48,236,133,.18); }
+@media(max-width:560px){.guest-auth-modal{padding:10px;align-items:flex-start}.guest-auth-modal>.auth-page{max-height:calc(100dvh - 20px)}.guest-auth-modal>.auth-page .auth-card{max-height:calc(100dvh - 20px);padding:20px}.finance-method img{width:48px;height:48px}}
+.mode-switch { display:none!important; }
 
 /* Editable sub-administrator permissions. */
 .subadmin-list article{display:block}.subadmin-summary{display:flex;flex-direction:column;gap:4px}.subadmin-access{margin-top:12px;border-top:1px solid #2b3036;padding-top:10px}.subadmin-access summary{cursor:pointer;color:#8ed7ff;font-size:12px;font-weight:800}.permission-grid.compact{margin:12px 0;grid-template-columns:repeat(2,minmax(0,1fr));padding:10px}.subadmin-password{display:flex;flex-direction:column;gap:6px;margin:10px 0;color:#aeb5be;font-size:11px}.subadmin-password input{border:1px solid #343941;border-radius:9px;background:#0e1013;color:#fff;padding:9px}.subadmin-access .admin-actions{justify-content:flex-start}

@@ -1,6 +1,5 @@
 export type RoundPhase = "WAITING" | "RUNNING" | "CRASHED";
 export type BetSlot = "left" | "right";
-export type AccountMode = "REAL" | "DEMO";
 
 export interface PublicBet {
   id: string;
@@ -31,10 +30,8 @@ export interface RoundSnapshot {
   commit: string;
   history: RoundHistoryItem[];
   bets: PublicBet[];
-  demoBets: PublicBet[];
   online: number;
   automatedOnline: number;
-  demoOnline: number;
   houseEdgePercent: number;
   lossPool: number;
   commissionPercent: number;
@@ -64,6 +61,4 @@ export interface WalletSnapshot {
   totalBalance: number;
   activeBets: Partial<Record<BetSlot, PublicBet>>;
   queuedBets: Partial<Record<BetSlot, PublicBet>>;
-  demoBalance: number;
-  demoActiveBets: Partial<Record<BetSlot, PublicBet>>;
 }
