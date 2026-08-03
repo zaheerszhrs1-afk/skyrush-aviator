@@ -7,14 +7,15 @@ type Props = {
   chat: ChatItem[];
   online: number;
   onClose: () => void;
-  user: AuthUser;
+  user: AuthUser | null;
+  onRequireAuth: () => void;
   onNotify: (message: string, type?: "error" | "success") => void;
   supportOpenRequest?: number;
 };
 
 const chatAvatars = ["🌋", "🌎", "🪐", "🎭", "🍀", "🌙", "⚡", "🎯"];
 
-export const ChatPanel = memo(function ChatPanel({ chat, online, onClose, user, onNotify, supportOpenRequest = 0 }: Props) {
+export const ChatPanel = memo(function ChatPanel({ chat, online, onClose, user, onRequireAuth, onNotify, supportOpenRequest = 0 }: Props) {
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState<"CHAT" | "SUPPORT">("CHAT");
   const [supportUnread, setSupportUnread] = useState(0);
@@ -31,6 +32,10 @@ export const ChatPanel = memo(function ChatPanel({ chat, online, onClose, user, 
   }, [supportOpenRequest]);
 
   const send = () => {
+    if (!user) {
+      onRequireAuth();
+      return;
+    }
     const trimmed = message.trim();
     if (!trimmed) return;
     socket.emit("chat:send", { message: trimmed });
@@ -66,12 +71,12 @@ export const ChatPanel = memo(function ChatPanel({ chat, online, onClose, user, 
           {chat.length === 0 && <p className="chat-empty">No messages yet. Start the conversation.</p>}
         </div>
         <div className="chat-input">
-          <input value={message} maxLength={160} placeholder="Reply" aria-label="Chat message" onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) send(); }} />
+          <input value={message} maxLength={160} placeholder={user ? "Reply" : "Sign in to chat"} aria-label="Chat message" onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) send(); }} />
           <button className="chat-send" type="button" aria-label="Send message" onClick={send}>↵</button>
           <div className="chat-input-footer"><span aria-hidden="true">☺</span><span className="gif-chip">GIF</span><small>{160 - message.length}</small></div>
         </div>
       </> : null}
-      <SupportChat user={user} onNotify={onNotify} embedded active={activeTab === "SUPPORT"} onUnreadChange={setSupportUnread} />
+      {user ? <SupportChat user={user} onNotify={onNotify} embedded active={activeTab === "SUPPORT"} onUnreadChange={setSupportUnread} /> : activeTab === "SUPPORT" ? <section className="support-chat-inline chat-auth-prompt"><strong>Sign in to contact support</strong><span>Your live game remains visible while we open a secure support conversation.</span><button type="button" onClick={onRequireAuth}>Login or sign up</button></section> : null}
     </aside>
   );
 });

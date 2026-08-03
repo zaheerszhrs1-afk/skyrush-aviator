@@ -8,6 +8,8 @@ type Props = {
   round: RoundSnapshot;
   wallet: WalletSnapshot;
   accountMode: AccountMode;
+  authenticated: boolean;
+  onRequireAuth: () => void;
   onNotify: (message: string, type?: "error" | "success") => void;
 };
 
@@ -19,7 +21,7 @@ type BetActionResult = {
 
 const quickAmounts = [64, 160, 320, 1600];
 
-export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) {
+export function BetPanel({ slot, round, wallet, accountMode, authenticated, onRequireAuth, onNotify }: Props) {
   const roundState = useRoundTick(round);
   const [mode, setMode] = useState<"bet" | "auto">("bet");
   const [amount, setAmount] = useState(16);
@@ -107,7 +109,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
   };
 
   useEffect(() => {
-    if (!autoCashOut || !activeBet || roundState.phase !== "RUNNING" || roundState.multiplier < autoAt) return;
+    if (!authenticated || !autoCashOut || !activeBet || roundState.phase !== "RUNNING" || roundState.multiplier < autoAt) return;
     const requestKey = `${accountMode}:${activeBet.id}`;
     if (autoCashoutRequestRef.current === requestKey || lastAutoCashoutRef.current === requestKey) return;
 
@@ -117,10 +119,10 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
       lastAutoCashoutRef.current = requestKey;
       handleAutoResult(result, "cashout");
     });
-  }, [accountMode, autoAt, autoCashOut, activeBet?.id, roundState.multiplier, roundState.phase, slot]);
+  }, [accountMode, authenticated, autoAt, autoCashOut, activeBet?.id, roundState.multiplier, roundState.phase, slot]);
 
   useEffect(() => {
-    if (!autoBet || !roundState.roundId || activeBet || queuedBet) return;
+    if (!authenticated || !autoBet || !roundState.roundId || activeBet || queuedBet) return;
     if (accountMode === "DEMO" && roundState.phase !== "WAITING") return;
 
     const requestKey = accountMode === "DEMO"
@@ -134,10 +136,14 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
       lastAutoPlaceRef.current = requestKey;
       handleAutoResult(result, "place");
     });
-  }, [accountMode, activeBet?.id, amount, autoBet, queuedBet?.id, roundState.phase, roundState.roundId, slot]);
+  }, [accountMode, authenticated, activeBet?.id, amount, autoBet, queuedBet?.id, roundState.phase, roundState.roundId, slot]);
 
   const primaryAction = () => {
     if (actionPending) return;
+    if (!authenticated) {
+      onRequireAuth();
+      return;
+    }
 
     if (queuedBet) {
       setActionPending("cancel");
@@ -205,7 +211,7 @@ export function BetPanel({ slot, round, wallet, accountMode, onNotify }: Props) 
             setAutoCashOut(false);
           }}
         >Bet</button>
-        <button className={mode === "auto" ? "active" : ""} onClick={() => setMode("auto")}>Auto</button>
+        <button className={mode === "auto" ? "active" : ""} onClick={() => { if (!authenticated) { onRequireAuth(); return; } setMode("auto"); }}>Auto</button>
       </div>
 
       <div className="bet-main-row">

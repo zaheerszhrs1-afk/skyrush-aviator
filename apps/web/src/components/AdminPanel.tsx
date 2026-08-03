@@ -7,6 +7,7 @@ import { NotificationRecipientPicker } from "./NotificationRecipientPicker";
 
 type AdminTab = AdminPermission;
 interface Props { onSignOut: () => void; currentUser: AuthUser; }
+interface AdminReminder { id: string; title: string; body: string; count: number; tab: AdminTab; }
 interface Summary { [key: string]: any; users: number; depositsPending: number; withdrawalsPending: number; activeBets: number; reconciliation: { balanced: boolean; difference: number; betEscrowMirrorDifference: number }; recentRounds: any[]; }
 interface DailyBetReport { days: number; totals: any; rows: any[]; }
 interface AdminSettings { houseEdgePercent: number; commissionPercent: number; reservePercent: number; minBet: number; minDeposit: number; minWithdrawal: number; wageringRequirementPercent: number; maxBet: number; maxCashoutMultiplier: number; depositsEnabled: boolean; withdrawalsEnabled: boolean; whatsappNumber?: string; whatsappMessage?: string; }
@@ -89,6 +90,7 @@ export function AdminPanel({ onSignOut, currentUser }: Props) {
   const [subadminPasswords, setSubadminPasswords] = useState<Record<string, string>>({});
   const [support, setSupport] = useState<SupportConversation[]>([]); const [selectedSupportUser, setSelectedSupportUser] = useState<string | null>(null); const [supportMessages, setSupportMessages] = useState<SupportMessage[]>([]); const [supportDraft, setSupportDraft] = useState("");
   const [gameControl, setGameControl] = useState<GameControl | null>(null);
+  const [reminders, setReminders] = useState<AdminReminder[]>([]); const [remindersOpen, setRemindersOpen] = useState(false); const [reminderSeen, setReminderSeen] = useState<Record<string, number>>({});
 
   const run = async (action: () => Promise<void>, success = "Action completed successfully.") => { setBusy(true); setMessage(""); try { await action(); setMessage(success); } catch (error) { setMessage(error instanceof Error ? error.message : "Action failed."); } finally { setBusy(false); } };
   const load = async (selected = tab) => {
@@ -116,7 +118,18 @@ export function AdminPanel({ onSignOut, currentUser }: Props) {
     await routes[selected]?.();
   };
 
+  const loadReminders = async () => {
+    const result = await apiRequest<{ reminders: AdminReminder[] }>("/api/admin/reminders");
+    setReminders(result.reminders);
+  };
+
   useEffect(() => { setMessage(""); void load().catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load admin data.")); }, [tab, betDays, reportStatus]);
+  useEffect(() => {
+    try { setReminderSeen(JSON.parse(localStorage.getItem(`b9t9-admin-reminders:${currentUser.id}`) ?? "{}")); } catch { setReminderSeen({}); }
+    void loadReminders().catch(() => undefined);
+    const timer = window.setInterval(() => void loadReminders().catch(() => undefined), 30_000);
+    return () => window.clearInterval(timer);
+  }, [currentUser.id]);
   useEffect(() => {
     const refresh = () => { if (tab === "SUPPORT") void load("SUPPORT"); };
     const onSupportMessage = (item: any) => {
@@ -142,6 +155,14 @@ export function AdminPanel({ onSignOut, currentUser }: Props) {
 
   const filteredAudit = useMemo(() => audit.filter((item) => (auditType === "ALL" || item.type === auditType) && `${item.type} ${item.description} ${person(item.userId)} ${item.roundId ?? ""} ${item.betId ?? ""}`.toLowerCase().includes(auditQuery.toLowerCase())), [audit, auditQuery, auditType]);
   const auditTypes = useMemo(() => Array.from(new Set(audit.map((item) => item.type))).sort(), [audit]);
+  const unreadReminders = reminders.filter((item) => item.count > Number(reminderSeen[item.id] ?? 0)).length;
+  const openReminder = (item: AdminReminder) => {
+    const next = { ...reminderSeen, [item.id]: item.count };
+    setReminderSeen(next);
+    try { localStorage.setItem(`b9t9-admin-reminders:${currentUser.id}`, JSON.stringify(next)); } catch { /* Ignore unavailable local storage. */ }
+    setRemindersOpen(false);
+    if (allowedTabs.some((tabItem) => tabItem.key === item.tab)) setTab(item.tab);
+  };
   const overviewCards = summary ? [
     ["Users", summary.users, "USERS"], ["Pending deposits", summary.depositsPending, "DEPOSITS"], ["Open withdrawals", summary.withdrawalsPending, "WITHDRAWALS"], ["Active bets", summary.activeBets, "BETS"],
     ["Loss pool", money(summary.lossPool), "AUDIT"], ["Available reward liquidity", money(summary.availableRewardLiquidity), "BETS"], ["Reserved winner liquidity", money(summary.reservedRewardLiquidity), "BETS"], ["Active bet escrow", money(summary.activeBetEscrow), "BETS"],
@@ -151,7 +172,7 @@ export function AdminPanel({ onSignOut, currentUser }: Props) {
 
   return <main className="admin-shell">
     <aside className="admin-sidebar"><div className="admin-title"><strong>B9T9 Admin</strong><span>{currentUser.role === "ADMIN" ? "Primary administrator" : "Restricted staff access"}</span></div>{allowedTabs.map((item) => <button className={tab === item.key ? "active" : ""} key={item.key} onClick={() => setTab(item.key)}>{item.label}</button>)}<button className="admin-signout" onClick={onSignOut}>Sign out</button></aside>
-    <section className="admin-content"><header><div><h1>{ALL_TABS.find((item) => item.key === tab)?.label}</h1><p>Secure platform operations and user management.</p></div><button onClick={() => void load()}>Refresh</button></header>{message && <div className="admin-message">{message}</div>}
+    <section className="admin-content"><header><div><h1>{ALL_TABS.find((item) => item.key === tab)?.label}</h1><p>Secure platform operations and user management.</p></div><div className="admin-header-actions"><div className="admin-reminder-wrap"><button className={`admin-reminder-button ${unreadReminders > 0 ? "has-unread" : ""}`} type="button" aria-label="Admin reminders" aria-expanded={remindersOpen} onClick={() => setRemindersOpen((value) => !value)}>🔔{unreadReminders > 0 && <span>{Math.min(unreadReminders, 99)}</span>}</button>{remindersOpen && <div className="admin-reminder-menu"><header><div><strong>Admin reminders</strong><small>New and pending work</small></div><button type="button" onClick={() => setRemindersOpen(false)} aria-label="Close reminders">×</button></header>{reminders.length === 0 ? <p className="admin-reminder-empty">All caught up.</p> : reminders.map((item) => <button className={item.count > Number(reminderSeen[item.id] ?? 0) ? "unread" : ""} type="button" key={item.id} onClick={() => openReminder(item)}><span className="admin-reminder-count">{item.count}</span><span><strong>{item.title}</strong><small>{item.body}</small></span><b>›</b></button>)}</div>}</div><button onClick={() => { void load(); void loadReminders(); }}>Refresh</button></div></header>{message && <div className="admin-message">{message}</div>}
 
       {tab === "OVERVIEW" && summary && <><div className={`settings-warning ${summary.reconciliation.balanced ? "" : "danger"}`}>Accounting: <strong>{summary.reconciliation.balanced ? "BALANCED" : "REVIEW REQUIRED"}</strong>{` · Difference ${money(summary.reconciliation.difference)} · Escrow mirror ${money(summary.reconciliation.betEscrowMirrorDifference)}`}</div><div className="admin-kpis clickable-kpis">{overviewCards.filter(([, , target]) => currentUser.role === "ADMIN" || currentUser.adminPermissions.includes(target)).map(([label, value, target]) => <button key={label} onClick={() => setTab(target)}><span>{label}</span><strong>{value}</strong><small>Open {ALL_TABS.find((item) => item.key === target)?.label} →</small></button>)}</div><div className="admin-table-card"><h2>Recent rounds</h2><table><thead><tr><th>Round</th><th>Crash</th><th>Stake</th><th>Losses</th><th>Payout</th><th>Commission</th><th>Date</th></tr></thead><tbody>{summary.recentRounds.map((round) => <tr key={round._id}><td>{round.roundId.slice(0, 8)}</td><td>{Number(round.crashPoint).toFixed(2)}x</td><td>{money(round.totalStake)}</td><td>{money(round.totalLosses)}</td><td>{money(round.totalPayout)}</td><td>{money(round.totalCommission)}</td><td>{new Date(round.crashedAt).toLocaleString()}</td></tr>)}</tbody></table></div></>}
 

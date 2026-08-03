@@ -27,11 +27,25 @@ interface NowPaymentInstructions {
 }
 
 const NOWPAYMENTS_METHOD = "NOWPayments Crypto";
+const JAZZCASH_TILL_ID = "984046332";
+const depositMethods = [
+  { value: "JazzCash", label: "Jazzcash", icon: "JC" },
+  { value: "EasyPaisa", label: "Easypaisa", icon: "EP" },
+  { value: "USDT Manual", label: "Crypto", icon: "₮" },
+  { value: "Bank Transfer", label: "Bank", icon: "⌂" }
+];
+const withdrawalMethods = [
+  { value: "EasyPaisa", label: "Easypaisa", icon: "EP" },
+  { value: "JazzCash", label: "Jazzcash", icon: "JC" },
+  { value: "Bank Transfer", label: "Bank", icon: "⌂" },
+  { value: "USDT Manual", label: "USDT", icon: "₮" }
+];
+const depositQuickAmounts = [100, 300, 500, 1_000, 3_000, 5_000, 10_000, 30_000, 50_000];
 
 export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "DEPOSIT" }: FinanceModalProps) {
   const [tab, setTab] = useState<"DEPOSIT" | "WITHDRAW" | "HISTORY">(initialTab);
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("Bank Transfer");
+  const [method, setMethod] = useState("JazzCash");
   const [reference, setReference] = useState("");
   const [details, setDetails] = useState("");
   const [message, setMessage] = useState("");
@@ -46,11 +60,6 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
 
   const wagerTarget = Math.max(0, Number(wallet.wagerRequirementTarget ?? 0));
   const wagerRemaining = Math.max(0, Number(wallet.wagerRequirementRemaining ?? 0));
-  const wagerCompleted = Math.min(
-    wagerTarget,
-    Math.max(0, Number(wallet.wagerRequirementCompleted ?? Math.max(0, wagerTarget - wagerRemaining)))
-  );
-  const wagerProgress = wagerTarget > 0 ? Math.min(100, (wagerCompleted / wagerTarget) * 100) : 0;
   const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
   const loadHistory = async () => {
@@ -92,6 +101,11 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
   const refreshWallet = async () => {
     const result = await apiRequest<{ wallet: WalletSnapshot }>("/api/wallet");
     onWalletRefresh(result.wallet);
+  };
+
+  const selectMethod = (value: string) => {
+    setMethod(value);
+    setCryptoPayment(null);
   };
 
   const submitDeposit = async (event: React.FormEvent) => {
@@ -155,21 +169,24 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
           <div><strong>Wallet</strong><span>Available {formatMoney(wallet.balance)} PKR · Total {formatMoney(wallet.totalBalance)} PKR</span></div>
           <button onClick={onClose}>×</button>
         </header>
-        <nav>
+        <nav className="finance-tabs">
           <button className={tab === "DEPOSIT" ? "active" : ""} onClick={() => setTab("DEPOSIT")}>Deposit</button>
           <button className={tab === "WITHDRAW" ? "active" : ""} onClick={() => { setTab("WITHDRAW"); if (method === NOWPAYMENTS_METHOD) setMethod("Bank Transfer"); }}>Withdraw</button>
           <button className={tab === "HISTORY" ? "active" : ""} onClick={() => setTab("HISTORY")}>History</button>
         </nav>
 
         {tab === "DEPOSIT" && (
-          <form className="finance-form" onSubmit={submitDeposit}>
-            <label>Amount (PKR)<input type="number" min={financeSettings.minDeposit} step="0.01" value={amount} onChange={(event) => { setAmount(event.target.value); setCryptoPayment(null); }} required /></label>
-            <label>Payment method<select value={method} onChange={(event) => { setMethod(event.target.value); setCryptoPayment(null); }}><option>Bank Transfer</option><option>JazzCash</option><option>EasyPaisa</option><option>USDT Manual</option>{nowPayments.enabled && <option>{NOWPAYMENTS_METHOD}</option>}</select></label>
+          <form className="finance-form finance-reference-form" onSubmit={submitDeposit}>
+            <div className="finance-methods">{[...depositMethods, ...(nowPayments.enabled ? [{ value: NOWPAYMENTS_METHOD, label: "NOW Crypto", icon: "N" }] : [])].map((item) => <button type="button" key={item.value} className={`finance-method ${method === item.value ? "active" : ""}`} onClick={() => selectMethod(item.value)}><strong>{item.icon}</strong><span>{item.label}</span></button>)}</div>
+            <div className="finance-section-label">Select amount</div>
+            <div className="finance-quick-amounts">{depositQuickAmounts.map((value) => <button type="button" key={value} className={Number(amount) === value ? "active" : ""} onClick={() => { setAmount(String(value)); setCryptoPayment(null); }}>{value.toLocaleString()}</button>)}</div>
+            <label className="finance-input-label">Deposit amount<input type="number" min={financeSettings.minDeposit} step="0.01" placeholder="PKR" value={amount} onChange={(event) => { setAmount(event.target.value); setCryptoPayment(null); }} required /></label>
             {method === NOWPAYMENTS_METHOD
-              ? <label>Pay with<select value={cryptoCurrency} onChange={(event) => { setCryptoCurrency(event.target.value); setCryptoPayment(null); }}>{nowPayments.currencies.map((currency) => <option value={currency} key={currency}>{currency.toUpperCase()}</option>)}</select></label>
-              : <label>Transaction/reference ID<input value={reference} onChange={(event) => setReference(event.target.value)} required /></label>}
-            <small className="finance-rule">Minimum deposit: {financeSettings.minDeposit.toLocaleString()} PKR. {method === NOWPAYMENTS_METHOD ? "Crypto deposits are credited automatically after NOWPayments reports the payment as finished and" : "Approved deposits"} add a {financeSettings.wageringRequirementPercent}% wagering requirement.</small>
-            <button disabled={busy || !financeSettings.depositsEnabled || (method === NOWPAYMENTS_METHOD && (!cryptoCurrency || Boolean(cryptoPayment)))}>{!financeSettings.depositsEnabled ? "Deposits disabled" : busy ? "Submitting..." : cryptoPayment ? "Payment created" : method === NOWPAYMENTS_METHOD ? "Create crypto payment" : "Submit deposit request"}</button>
+              ? <label className="finance-input-label">Pay with<select value={cryptoCurrency} onChange={(event) => { setCryptoCurrency(event.target.value); setCryptoPayment(null); }}>{nowPayments.currencies.map((currency) => <option value={currency} key={currency}>{currency.toUpperCase()}</option>)}</select></label>
+              : <label className="finance-input-label">Transaction/reference ID<input value={reference} onChange={(event) => setReference(event.target.value)} required /></label>}
+            <div className="finance-tutorial"><strong>Deposit tutorial</strong><span>1. Scan the payment QR or use the payment account details below.</span><span>2. Enter the exact amount and submit your transaction reference.</span><span>3. Approved deposits add a {financeSettings.wageringRequirementPercent}% wagering requirement.</span></div>
+            <button className="finance-submit" disabled={busy || !financeSettings.depositsEnabled || (method === NOWPAYMENTS_METHOD && (!cryptoCurrency || Boolean(cryptoPayment)))}>{!financeSettings.depositsEnabled ? "Deposits disabled" : busy ? "Submitting..." : cryptoPayment ? "Payment created" : method === NOWPAYMENTS_METHOD ? "Create crypto payment" : "Submit deposit"}</button>
+            {method === "JazzCash" && <section className="jazzcash-payment-card"><img src="/jazzcash-raast-qr.jpg" alt="JazzCash Raast QR payment instructions for YouSaf Internet" /><div className="till-id-row"><div><span>Till ID</span><strong>{JAZZCASH_TILL_ID}</strong></div><button type="button" onClick={() => copyPaymentValue(JAZZCASH_TILL_ID)}>Copy Till ID</button></div><small>Scan the QR code or dial *786*10# and enter this Till ID to pay via JazzCash.</small></section>}
             {cryptoPayment && <section className="crypto-payment-card" aria-live="polite">
               <header><div><small>NOWPayments</small><strong>Send exactly {cryptoPayment.payAmount} {cryptoPayment.payCurrency.toUpperCase()}</strong></div><span>{cryptoPayment.status.replaceAll("_", " ")}</span></header>
               {cryptoPayment.network && <p>Network <strong>{cryptoPayment.network.toUpperCase()}</strong></p>}
@@ -181,33 +198,15 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
         )}
 
         {tab === "WITHDRAW" && (
-          <form className="finance-form" onSubmit={submitWithdrawal}>
-            <section className={`wager-progress-card ${wagerTarget > 0 && wagerRemaining === 0 ? "complete" : ""}`}>
-              <div className="wager-progress-heading">
-                <span>Current valid bet</span>
-                <strong>{wagerTarget > 0 ? `${formatMoney(wagerCompleted)} / ${formatMoney(wagerTarget)}` : "No active requirement"}</strong>
-              </div>
-              <div className="wager-progress-track" role="progressbar" aria-label="Deposit wagering progress" aria-valuemin={0} aria-valuemax={wagerTarget || 1} aria-valuenow={wagerCompleted}>
-                <span style={{ width: `${wagerProgress}%` }} />
-                {wagerTarget > 0 && <b>{formatMoney(wagerCompleted)} / {formatMoney(wagerTarget)}</b>}
-              </div>
-              <div className="wager-progress-meta">
-                <span>Locked winnings <b>{formatMoney(wallet.pendingRewards)} PKR</b></span>
-                <span>Remaining <b>{formatMoney(wagerRemaining)} PKR</b></span>
-              </div>
-              <small>
-                {wagerTarget <= 0
-                  ? "An approved deposit will start the wagering progress."
-                  : wagerRemaining <= 0
-                    ? "Wagering completed. All settled winnings are available for withdrawal."
-                    : `Complete ${formatMoney(wagerRemaining)} PKR more in settled real bets to unlock winnings.`}
-              </small>
-            </section>
-            <label>Amount (PKR)<input type="number" min={financeSettings.minWithdrawal} max={wallet.balance} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
-            <label>Withdrawal method<select value={method} onChange={(event) => setMethod(event.target.value)}><option>Bank Transfer</option><option>JazzCash</option><option>EasyPaisa</option><option>USDT Manual</option></select></label>
-            <label>Account details<textarea value={details} onChange={(event) => setDetails(event.target.value)} required rows={4} /></label>
-            <small className="finance-rule">Minimum withdrawal: {financeSettings.minWithdrawal.toLocaleString()} PKR. Locked winnings become withdrawable after the wagering requirement reaches zero.</small>
-            <button disabled={busy || !financeSettings.withdrawalsEnabled}>{!financeSettings.withdrawalsEnabled ? "Withdrawals disabled" : busy ? "Submitting..." : "Request withdrawal"}</button>
+          <form className="finance-form finance-reference-form" onSubmit={submitWithdrawal}>
+            <div className="finance-balance-summary"><div><strong>{formatMoney(wallet.balance)}</strong><span>Cash balance</span></div><div><strong>{formatMoney(Math.max(0, wallet.balance - wallet.pendingRewards))}</strong><span>Withdrawable</span></div></div>
+            <div className="finance-methods finance-withdraw-methods">{withdrawalMethods.map((item) => <button type="button" key={item.value} className={`finance-method ${method === item.value ? "active" : ""}`} onClick={() => selectMethod(item.value)}><strong>{item.icon}</strong><span>{item.label}</span></button>)}</div>
+            <label className="finance-input-label">Choose account<textarea value={details} onChange={(event) => setDetails(event.target.value)} placeholder="Add your wallet, bank or account details" required rows={3} /></label>
+            <button type="button" className="finance-add-account" onClick={() => setDetails("")}>Add new account</button>
+            <label className="finance-input-label">Withdrawal amount ({financeSettings.minWithdrawal.toLocaleString()} - {formatMoney(wallet.balance)} PKR)<input type="number" min={financeSettings.minWithdrawal} max={wallet.balance} step="0.01" placeholder="Withdrawal amount" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
+            <div className="finance-withdraw-summary"><div><span>Withdraw amount</span><strong>RS:{formatMoney(Number(amount) || 0)}</strong></div><div><span>Remain wagers</span><strong>{formatMoney(wagerRemaining)} PKR</strong></div><div><span>Remaining withdrawal attempts</span><strong>{wagerTarget > 0 && wagerRemaining > 0 ? "Locked" : "Available"}</strong></div></div>
+            <small className="finance-tutorial">{wagerTarget <= 0 ? "An approved deposit will start the wagering progress." : wagerRemaining <= 0 ? "Wagering completed. Your settled winnings are available for withdrawal." : `Complete ${formatMoney(wagerRemaining)} PKR more in settled real bets to unlock winnings.`}</small>
+            <button className="finance-submit" disabled={busy || !financeSettings.withdrawalsEnabled}>{!financeSettings.withdrawalsEnabled ? "Withdrawals disabled" : busy ? "Submitting..." : "Submit withdrawal"}</button>
           </form>
         )}
 

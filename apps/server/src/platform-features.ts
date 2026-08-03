@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import {
   AuthSessionModel,
   ContentCampaignModel,
+  DepositRequestModel,
   FaqModel,
   NotificationCampaignModel,
   PasswordResetTokenModel,
@@ -14,6 +15,7 @@ import {
   UserModel,
   UserNotificationModel,
   UserReportModel,
+  WithdrawalRequestModel,
   type AdminPermission
 } from "./models.js";
 import {
@@ -555,6 +557,29 @@ export function registerPlatformFeatures(app: Express, io: Server, engine: GameC
       campaigns,
       recipients: recipients.map((user: any) => ({ id: String(user._id), name: user.name, email: user.email, avatarUrl: user.avatarUrl ?? "" }))
     });
+  }));
+
+  app.get("/api/admin/reminders", requireAdmin, asyncRoute(async (_request, response) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [pendingDeposits, pendingWithdrawals, openReports, supportUnread, newUsers] = await Promise.all([
+      DepositRequestModel.countDocuments({ status: "PENDING" }),
+      WithdrawalRequestModel.countDocuments({ status: "PENDING" }),
+      UserReportModel.countDocuments({ status: { $in: ["OPEN", "IN_REVIEW"] } }),
+      SupportConversationModel.aggregate([
+        { $match: { unreadForAdmin: { $gt: 0 } } },
+        { $group: { _id: null, count: { $sum: "$unreadForAdmin" } } }
+      ]),
+      UserModel.countDocuments({ role: "USER", createdAt: { $gte: today } })
+    ]);
+    const reminders = [
+      { id: "pending-deposits", tab: "DEPOSITS", count: pendingDeposits, title: "Deposits need review", body: `${pendingDeposits} deposit request${pendingDeposits === 1 ? "" : "s"} are waiting for a decision.` },
+      { id: "pending-withdrawals", tab: "WITHDRAWALS", count: pendingWithdrawals, title: "Withdrawals need review", body: `${pendingWithdrawals} withdrawal request${pendingWithdrawals === 1 ? "" : "s"} are waiting for processing.` },
+      { id: "open-reports", tab: "REPORTS", count: openReports, title: "User reports are open", body: `${openReports} report${openReports === 1 ? "" : "s"} still need admin attention.` },
+      { id: "unread-support", tab: "SUPPORT", count: Number(supportUnread[0]?.count ?? 0), title: "Unread support messages", body: `${Number(supportUnread[0]?.count ?? 0)} support message${Number(supportUnread[0]?.count ?? 0) === 1 ? "" : "s"} are waiting for a reply.` },
+      { id: "new-users", tab: "USERS", count: newUsers, title: "New users today", body: `${newUsers} new user${newUsers === 1 ? "" : "s"} joined today.` }
+    ].filter((item) => item.count > 0);
+    response.json({ ok: true, reminders });
   }));
 
   app.post("/api/admin/notifications", requireAdmin, asyncRoute(async (request: AuthenticatedRequest, response) => {

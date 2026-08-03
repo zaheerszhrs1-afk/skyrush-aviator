@@ -216,6 +216,10 @@ export class GameEngine {
     return this.getWallet(userId);
   }
 
+  connectPublic(socketId: string): void {
+    this.socketUsers.set(socketId, "");
+  }
+
   disconnect(socketId: string): void {
     this.socketUsers.delete(socketId);
   }

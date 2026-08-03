@@ -1094,7 +1094,6 @@ app.patch("/api/admin/settings", requireAdmin, asyncRoute(async (request: Authen
 io.use(async (socket, next) => {
   try {
     const user = await resolveAuthUserFromCookie(socket.handshake.headers.cookie);
-    if (!user) return next(new Error("Authentication required."));
     socket.data.user = user;
     next();
   } catch (error) {
@@ -1103,11 +1102,15 @@ io.use(async (socket, next) => {
 });
 
 io.on("connection", async (socket) => {
-  const authUser = socket.data.user as { id: string; name: string };
-  void UserModel.updateOne({ _id: authUser.id, role: "USER" }, { $set: { lastActiveAt: new Date() } })
-    .catch((error) => console.error("Unable to update user activity.", error));
+  const authUser = socket.data.user as { id: string; name: string } | undefined;
+  if (authUser) {
+    void UserModel.updateOne({ _id: authUser.id, role: "USER" }, { $set: { lastActiveAt: new Date() } })
+      .catch((error) => console.error("Unable to update user activity.", error));
+    socket.emit("wallet:state", await engine.connect(socket.id, authUser.id));
+  } else {
+    engine.connectPublic(socket.id);
+  }
   socket.emit("round:state", engine.getSnapshot());
-  socket.emit("wallet:state", await engine.connect(socket.id, authUser.id));
 
   const recentChat = await ChatMessageModel.find({}).sort({ createdAt: -1 }).limit(80).lean();
   socket.emit("chat:history", recentChat.reverse().map((item) => ({
@@ -1116,6 +1119,11 @@ io.on("connection", async (socket) => {
     message: item.message,
     createdAt: new Date(item.createdAt as Date).getTime()
   })));
+
+  if (!authUser) {
+    socket.on("disconnect", () => engine.disconnect(socket.id));
+    return;
+  }
 
   socket.on("bet:place", async (payload: { slot?: BetSlot; amount?: number; mode?: AccountMode }, acknowledge?: (result: unknown) => void) => {
     const slot = payload?.slot === "right" ? "right" : "left";
