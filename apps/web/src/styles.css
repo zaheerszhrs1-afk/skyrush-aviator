@@ -2047,6 +2047,14 @@ button { color: inherit; }
 .finance-method.active img { border-color:#30ec85; box-shadow:0 0 0 2px rgba(48,236,133,.18); }
 @media(max-width:560px){.guest-auth-modal{padding:10px;align-items:flex-start}.guest-auth-modal>.auth-page{max-height:calc(100dvh - 20px)}.guest-auth-modal>.auth-page .auth-card{max-height:calc(100dvh - 20px);padding:20px}.finance-method img{width:48px;height:48px}}
 .mode-switch { display:none!important; }
+.guest-auth-modal { overflow:hidden; }
+.guest-auth-modal>.auth-page { max-height:calc(100dvh - 24px); }
+.guest-auth-modal>.auth-page .auth-card { max-height:calc(100dvh - 24px); overflow:hidden; padding:22px; }
+@media(max-height:760px){.guest-auth-modal>.auth-page .auth-card{padding:18px}.guest-auth-modal .auth-brand{margin-bottom:8px}.guest-auth-modal .brand-logo{width:42px;height:42px}.guest-auth-modal .auth-card h1{font-size:24px}.guest-auth-modal .auth-card>p{margin:5px 0 12px;font-size:12px}.guest-auth-modal .auth-card form{gap:8px}.guest-auth-modal .auth-card input{padding:9px}.guest-auth-modal .auth-forgot,.guest-auth-modal .auth-switch,.guest-auth-modal .admin-login-link{margin-top:8px}}
+@media(max-width:560px){.guest-auth-modal{padding:8px;align-items:center}.guest-auth-modal>.auth-page{max-height:calc(100dvh - 16px)}.guest-auth-modal>.auth-page .auth-card{max-height:calc(100dvh - 16px);padding:16px}.guest-auth-modal .auth-card h1{font-size:22px}.guest-auth-modal .auth-card>p{font-size:11px}.guest-auth-modal .auth-card label{font-size:11px}}
+.admin-receipt-link{color:#8fe8a0;font-weight:800;text-decoration:none}.admin-receipt-link:hover{text-decoration:underline}
+.till-id-heading{color:#f4d235;font-size:13px;font-weight:900;letter-spacing:.16em;text-align:center}.till-id-digits{display:flex;justify-content:center;gap:5px}.till-id-digits span{display:grid;place-items:center;min-width:30px;height:36px;border:1px solid #c8b334;border-radius:7px;background:#fff;color:#101010;font-size:20px;font-weight:900}.till-id-row small{color:#f0d77b;line-height:1.4}
+@media(max-width:560px){.till-id-digits{gap:3px}.till-id-digits span{min-width:27px;height:33px;font-size:17px}}
 
 /* Editable sub-administrator permissions. */
 .subadmin-list article{display:block}.subadmin-summary{display:flex;flex-direction:column;gap:4px}.subadmin-access{margin-top:12px;border-top:1px solid #2b3036;padding-top:10px}.subadmin-access summary{cursor:pointer;color:#8ed7ff;font-size:12px;font-weight:800}.permission-grid.compact{margin:12px 0;grid-template-columns:repeat(2,minmax(0,1fr));padding:10px}.subadmin-password{display:flex;flex-direction:column;gap:6px;margin:10px 0;color:#aeb5be;font-size:11px}.subadmin-password input{border:1px solid #343941;border-radius:9px;background:#0e1013;color:#fff;padding:9px}.subadmin-access .admin-actions{justify-content:flex-start}

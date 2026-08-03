@@ -136,7 +136,8 @@ export async function createDepositRequest(input: {
   userId: string;
   amount: number;
   method: string;
-  reference: string;
+  reference?: string;
+  receiptUrl?: string;
   note?: string;
 }): Promise<any> {
   const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
@@ -144,14 +145,16 @@ export async function createDepositRequest(input: {
   const amountMinor = toMinor(input.amount);
   const minDeposit = Number(settings?.minDeposit ?? 100);
   if (amountMinor < toMinor(minDeposit)) throw new Error(`Minimum deposit is ${minDeposit.toFixed(2)} PKR.`);
-  if (!input.method.trim() || !input.reference.trim()) throw new Error("Method and payment reference are required.");
+  const receiptUrl = input.receiptUrl?.trim() ?? "";
+  if (!input.method.trim() || !receiptUrl) throw new Error("Method and payment receipt are required.");
 
   return DepositRequestModel.create({
     userId: input.userId,
     amountMinor,
     amount: fromMinor(amountMinor),
     method: input.method.trim(),
-    reference: input.reference.trim(),
+    reference: input.reference?.trim() || "RECEIPT_UPLOAD",
+    receiptUrl,
     note: input.note?.trim() ?? ""
   });
 }

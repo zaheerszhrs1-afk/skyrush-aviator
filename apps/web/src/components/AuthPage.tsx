@@ -18,6 +18,8 @@ export function AuthPage({ onAuthenticated, onBackToLanding, initialMode = "LOGI
   const [success, setSuccess] = useState(false);
   const [busy, setBusy] = useState(false);
   const googleButton = useRef<HTMLDivElement>(null);
+  const onAuthenticatedRef = useRef(onAuthenticated);
+  onAuthenticatedRef.current = onAuthenticated;
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ?? "";
 
   useEffect(() => {
@@ -35,7 +37,7 @@ export function AuthPage({ onAuthenticated, onBackToLanding, initialMode = "LOGI
         callback: (response) => {
           setBusy(true); setMessage(""); setSuccess(false);
           void apiRequest<{ user: AuthUser }>("/api/auth/google", { method: "POST", body: JSON.stringify({ credential: response.credential }) })
-            .then((result) => onAuthenticated(result.user))
+            .then((result) => onAuthenticatedRef.current(result.user))
             .catch((error) => setMessage(error instanceof Error ? error.message : "Google sign-in failed."))
             .finally(() => setBusy(false));
         }
@@ -44,7 +46,7 @@ export function AuthPage({ onAuthenticated, onBackToLanding, initialMode = "LOGI
       google.accounts.id.renderButton(googleButton.current, { type: "standard", theme: "filled_black", size: "large", text: "continue_with", shape: "pill", width: 360 });
     };
     render();
-  }, [googleClientId, mode, onAuthenticated]);
+  }, [googleClientId, mode]);
 
   const switchMode = (next: Mode) => { setMode(next); setMessage(""); setSuccess(false); setPassword(""); setConfirmPassword(""); };
 

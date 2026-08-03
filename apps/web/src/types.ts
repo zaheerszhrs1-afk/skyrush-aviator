@@ -142,6 +142,7 @@ export interface DepositRequest {
   amount: number;
   method: string;
   reference: string;
+  receiptUrl?: string;
   note?: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
   gatewayProvider?: "NOWPAYMENTS";

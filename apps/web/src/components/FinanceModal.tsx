@@ -28,25 +28,24 @@ interface NowPaymentInstructions {
 
 const NOWPAYMENTS_METHOD = "NOWPayments Crypto";
 const JAZZCASH_TILL_ID = "984046332";
+const EASYPAISA_RAAST_ID = import.meta.env.VITE_EASYPAISA_RAAST_ID?.trim() || JAZZCASH_TILL_ID;
 const depositMethods = [
   { value: "JazzCash", label: "Jazzcash", icon: "JC", logo: "/payment-logos/jazzcash.png" },
-  { value: "EasyPaisa", label: "Easypaisa", icon: "EP", logo: "/payment-logos/easypaisa.png" },
-  { value: "USDT Manual", label: "Crypto", icon: "CRYPTO", logo: "/payment-logos/crypto.png" },
-  { value: "Bank Transfer", label: "Bank", icon: "BANK", logo: "" }
+  { value: "EasyPaisa", label: "Easypaisa", icon: "EP", logo: "/payment-logos/easypaisa.png" }
 ];
 const withdrawalMethods = [
   { value: "EasyPaisa", label: "Easypaisa", icon: "EP", logo: "/payment-logos/easypaisa.png" },
-  { value: "JazzCash", label: "Jazzcash", icon: "JC", logo: "/payment-logos/jazzcash.png" },
-  { value: "Bank Transfer", label: "Bank", icon: "BANK", logo: "" },
-  { value: "USDT Manual", label: "USDT", icon: "CRYPTO", logo: "/payment-logos/crypto.png" }
+  { value: "JazzCash", label: "Jazzcash", icon: "JC", logo: "/payment-logos/jazzcash.png" }
 ];
-const depositQuickAmounts = [100, 300, 500, 1_000, 3_000, 5_000, 10_000, 30_000, 50_000];
+const depositQuickAmounts = [300, 500, 1_000, 3_000, 5_000, 10_000, 30_000, 50_000];
 
 export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "DEPOSIT" }: FinanceModalProps) {
   const [tab, setTab] = useState<"DEPOSIT" | "WITHDRAW" | "HISTORY">(initialTab);
+  const [depositStep, setDepositStep] = useState<"FORM" | "PAYMENT">("FORM");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("JazzCash");
-  const [reference, setReference] = useState("");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptUrl, setReceiptUrl] = useState("");
   const [details, setDetails] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -105,7 +104,23 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
 
   const selectMethod = (value: string) => {
     setMethod(value);
+    setDepositStep("FORM");
     setCryptoPayment(null);
+    setReceiptFile(null);
+    setReceiptUrl("");
+  };
+
+  const uploadReceipt = async (file: File) => {
+    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME?.trim();
+    const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET?.trim();
+    if (!cloudName || !uploadPreset) throw new Error("Receipt uploads are not configured yet.");
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("upload_preset", uploadPreset);
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: "POST", body: formData });
+    const result = await response.json() as { secure_url?: string; error?: { message?: string } };
+    if (!response.ok || !result.secure_url) throw new Error(result.error?.message || "Payment receipt upload failed.");
+    return result.secure_url;
   };
 
   const submitDeposit = async (event: React.FormEvent) => {
@@ -119,15 +134,24 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
           body: JSON.stringify({ amount: Number(amount), payCurrency: cryptoCurrency })
         });
         setCryptoPayment(result.payment);
+        setDepositStep("PAYMENT");
         setMessage("Crypto payment created. Send the exact amount below; your wallet is credited automatically after confirmation.");
         return;
       }
+      if (depositStep === "FORM") {
+        setDepositStep("PAYMENT");
+        return;
+      }
+      const uploadedReceiptUrl = receiptUrl || (receiptFile ? await uploadReceipt(receiptFile) : "");
+      if (!uploadedReceiptUrl) throw new Error("Upload your payment receipt before submitting.");
       await apiRequest("/api/deposits", {
         method: "POST",
-        body: JSON.stringify({ amount: Number(amount), method, reference })
+        body: JSON.stringify({ amount: Number(amount), method, reference: "RECEIPT_UPLOAD", receiptUrl: uploadedReceiptUrl })
       });
       setAmount("");
-      setReference("");
+      setReceiptFile(null);
+      setReceiptUrl("");
+      setDepositStep("FORM");
       setMessage("Deposit request submitted for admin review.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Deposit request failed.");
@@ -170,24 +194,27 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
           <button onClick={onClose}>×</button>
         </header>
         <nav className="finance-tabs">
-          <button className={tab === "DEPOSIT" ? "active" : ""} onClick={() => setTab("DEPOSIT")}>Deposit</button>
-          <button className={tab === "WITHDRAW" ? "active" : ""} onClick={() => { setTab("WITHDRAW"); if (method === NOWPAYMENTS_METHOD) setMethod("Bank Transfer"); }}>Withdraw</button>
+          <button className={tab === "DEPOSIT" ? "active" : ""} onClick={() => { setTab("DEPOSIT"); setDepositStep("FORM"); }}>Deposit</button>
+          <button className={tab === "WITHDRAW" ? "active" : ""} onClick={() => { setTab("WITHDRAW"); setDepositStep("FORM"); if (method === NOWPAYMENTS_METHOD) setMethod("EasyPaisa"); }}>Withdraw</button>
           <button className={tab === "HISTORY" ? "active" : ""} onClick={() => setTab("HISTORY")}>History</button>
         </nav>
 
         {tab === "DEPOSIT" && (
           <form className="finance-form finance-reference-form" onSubmit={submitDeposit}>
-            <div className="finance-methods">{[...depositMethods, ...(nowPayments.enabled ? [{ value: NOWPAYMENTS_METHOD, label: "NOW Crypto", icon: "N", logo: "/payment-logos/crypto.png" }] : [])].map((item) => <button type="button" key={item.value} className={`finance-method ${method === item.value ? "active" : ""}`} onClick={() => selectMethod(item.value)}>{item.logo ? <img src={item.logo} alt="" /> : <strong>{item.icon}</strong>}<span>{item.label}</span></button>)}</div>
+            <div className="finance-methods">{[...depositMethods, ...(nowPayments.enabled ? [{ value: NOWPAYMENTS_METHOD, label: "Crypto", icon: "N", logo: "/payment-logos/crypto.png" }] : [])].map((item) => <button type="button" key={item.value} className={`finance-method ${method === item.value ? "active" : ""}`} onClick={() => selectMethod(item.value)}>{item.logo ? <img src={item.logo} alt="" /> : <strong>{item.icon}</strong>}<span>{item.label}</span></button>)}</div>
             <div className="finance-section-label">Select amount</div>
-            <div className="finance-quick-amounts">{depositQuickAmounts.map((value) => <button type="button" key={value} className={Number(amount) === value ? "active" : ""} onClick={() => { setAmount(String(value)); setCryptoPayment(null); }}>{value.toLocaleString()}</button>)}</div>
-            <label className="finance-input-label">Deposit amount<input type="number" min={financeSettings.minDeposit} step="0.01" placeholder="PKR" value={amount} onChange={(event) => { setAmount(event.target.value); setCryptoPayment(null); }} required /></label>
+            <div className="finance-quick-amounts">{depositQuickAmounts.map((value) => <button type="button" key={value} className={Number(amount) === value ? "active" : ""} onClick={() => { setAmount(String(value)); setCryptoPayment(null); setDepositStep("FORM"); }}>{value.toLocaleString()}</button>)}</div>
+            <label className="finance-input-label">Deposit amount<input type="number" min={financeSettings.minDeposit} step="0.01" placeholder="PKR" value={amount} onChange={(event) => { setAmount(event.target.value); setCryptoPayment(null); setDepositStep("FORM"); }} required /></label>
             {method === NOWPAYMENTS_METHOD
               ? <label className="finance-input-label">Pay with<select value={cryptoCurrency} onChange={(event) => { setCryptoCurrency(event.target.value); setCryptoPayment(null); }}>{nowPayments.currencies.map((currency) => <option value={currency} key={currency}>{currency.toUpperCase()}</option>)}</select></label>
-              : <label className="finance-input-label">Transaction/reference ID<input value={reference} onChange={(event) => setReference(event.target.value)} required /></label>}
-            <div className="finance-tutorial"><strong>Deposit tutorial</strong><span>1. Scan the payment QR or use the payment account details below.</span><span>2. Enter the exact amount and submit your transaction reference.</span><span>3. Approved deposits add a {financeSettings.wageringRequirementPercent}% wagering requirement.</span></div>
-            <button className="finance-submit" disabled={busy || !financeSettings.depositsEnabled || (method === NOWPAYMENTS_METHOD && (!cryptoCurrency || Boolean(cryptoPayment)))}>{!financeSettings.depositsEnabled ? "Deposits disabled" : busy ? "Submitting..." : cryptoPayment ? "Payment created" : method === NOWPAYMENTS_METHOD ? "Create crypto payment" : "Submit deposit"}</button>
-            {method === "JazzCash" && <section className="jazzcash-payment-card"><img src="/jazzcash-raast-qr.jpg" alt="JazzCash Raast QR payment instructions for YouSaf Internet" /><div className="till-id-row"><div><span>Till ID</span><strong>{JAZZCASH_TILL_ID}</strong></div><button type="button" onClick={() => copyPaymentValue(JAZZCASH_TILL_ID)}>Copy Till ID</button></div><small>Scan the QR code or dial *786*10# and enter this Till ID to pay via JazzCash.</small></section>}
-            {cryptoPayment && <section className="crypto-payment-card" aria-live="polite">
+              : null}
+            <div className="finance-tutorial"><strong>Deposit tutorial</strong><span>1. Select an amount and tap Continue.</span><span>2. Complete the payment, then upload your receipt.</span><span>3. Approved deposits add a {financeSettings.wageringRequirementPercent}% wagering requirement.</span></div>
+            {depositStep === "FORM" ? <button className="finance-submit" disabled={busy || !financeSettings.depositsEnabled || (method === NOWPAYMENTS_METHOD && !cryptoCurrency)}>{!financeSettings.depositsEnabled ? "Deposits disabled" : "Continue"}</button> : <>
+              {method !== NOWPAYMENTS_METHOD && <label className="finance-input-label">Payment receipt<input type="file" accept="image/*" onChange={(event) => { setReceiptFile(event.target.files?.[0] ?? null); setReceiptUrl(""); }} required /></label>}
+              <button className="finance-submit" disabled={busy || !financeSettings.depositsEnabled || (method === NOWPAYMENTS_METHOD && (!cryptoCurrency || Boolean(cryptoPayment)))}>{!financeSettings.depositsEnabled ? "Deposits disabled" : busy ? "Submitting..." : cryptoPayment ? "Payment created" : method === NOWPAYMENTS_METHOD ? "Create crypto payment" : "Submit deposit"}</button>
+            </>}
+            {depositStep === "PAYMENT" && (method === "JazzCash" || method === "EasyPaisa") && <section className="jazzcash-payment-card"><img src="/payment-logos/jazzcash-qr.png" alt="QR payment code" /><div className="till-id-heading">{method === "JazzCash" ? "TILL ID" : "RAAST ID"}</div><div className="till-id-digits">{(method === "JazzCash" ? JAZZCASH_TILL_ID : EASYPAISA_RAAST_ID).split("").map((digit, index) => <span key={`${digit}-${index}`}>{digit}</span>)}</div><div className="till-id-row"><small>{method === "JazzCash" ? "Use this Till ID in JazzCash." : "Use this Raast ID in Easypaisa."}</small><button type="button" onClick={() => copyPaymentValue(method === "JazzCash" ? JAZZCASH_TILL_ID : EASYPAISA_RAAST_ID)}>Copy ID</button></div><small>{method === "JazzCash" ? "Scan the QR code or dial *786*10# and enter this Till ID to pay." : "Scan the QR code or use this Raast ID to pay via Easypaisa."}</small></section>}
+            {depositStep === "PAYMENT" && cryptoPayment && <section className="crypto-payment-card" aria-live="polite">
               <header><div><small>NOWPayments</small><strong>Send exactly {cryptoPayment.payAmount} {cryptoPayment.payCurrency.toUpperCase()}</strong></div><span>{cryptoPayment.status.replaceAll("_", " ")}</span></header>
               {cryptoPayment.network && <p>Network <strong>{cryptoPayment.network.toUpperCase()}</strong></p>}
               <label>Payment address<div><code>{cryptoPayment.payAddress}</code><button type="button" onClick={() => copyPaymentValue(cryptoPayment.payAddress)}>Copy</button></div></label>

@@ -365,6 +365,7 @@ app.post("/api/deposits", requireAuth, asyncRoute(async (request: AuthenticatedR
     amount: numberInput(request.body?.amount),
     method: cleanText(request.body?.method, 80),
     reference: cleanText(request.body?.reference, 160),
+    receiptUrl: cleanText(request.body?.receiptUrl, 1000),
     note: cleanText(request.body?.note, 500)
   });
   response.status(201).json({ ok: true, deposit });
