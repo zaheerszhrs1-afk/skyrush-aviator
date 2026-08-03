@@ -59,6 +59,9 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
 
   const wagerTarget = Math.max(0, Number(wallet.wagerRequirementTarget ?? 0));
   const wagerRemaining = Math.max(0, Number(wallet.wagerRequirementRemaining ?? 0));
+  const wagerCompleted = Math.min(wagerTarget, Math.max(0, Number(wallet.wagerRequirementCompleted ?? 0)));
+  const wagerProgress = wagerTarget > 0 ? Math.min(100, (wagerCompleted / wagerTarget) * 100) : 100;
+  const withdrawalMinimum = Math.max(500, Number(financeSettings.minWithdrawal ?? 500));
   const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
   const loadHistory = async () => {
@@ -233,10 +236,10 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
             <div className="finance-methods finance-withdraw-methods">{withdrawalMethods.map((item) => <button type="button" key={item.value} className={`finance-method ${method === item.value ? "active" : ""}`} onClick={() => selectMethod(item.value)}>{item.logo ? <img src={item.logo} alt="" /> : <strong>{item.icon}</strong>}<span>{item.label}</span></button>)}</div>
             <label className="finance-input-label">Choose account<textarea value={details} onChange={(event) => setDetails(event.target.value)} placeholder="Add your wallet, bank or account details" required rows={3} /></label>
             <button type="button" className="finance-add-account" onClick={() => setDetails("")}>Add new account</button>
-            <label className="finance-input-label">Withdrawal amount ({financeSettings.minWithdrawal.toLocaleString()} - {formatMoney(wallet.balance)} PKR)<input type="number" min={financeSettings.minWithdrawal} max={wallet.balance} step="0.01" placeholder="Withdrawal amount" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
+            <div className="finance-wager-progress"><div><span>Wagering progress</span><strong>{formatMoney(wagerCompleted)} / {formatMoney(wagerTarget)} PKR</strong><small>Spent / required</small></div><div className="finance-wager-progress-bar"><span style={{ width: `${wagerProgress}%` }} /></div><p>{wagerRemaining <= 0 ? "Requirement completed. Withdrawals are unlocked." : `Spend ${formatMoney(wagerRemaining)} PKR more in settled bets to unlock withdrawals.`}</p></div>
+            <label className="finance-input-label">Withdrawal amount ({withdrawalMinimum.toLocaleString()} - {formatMoney(wallet.balance)} PKR)<input type="number" min={withdrawalMinimum} max={wallet.balance} step="0.01" placeholder="Withdrawal amount" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
             <div className="finance-withdraw-summary"><div><span>Withdraw amount</span><strong>RS:{formatMoney(Number(amount) || 0)}</strong></div><div><span>Remain wagers</span><strong>{formatMoney(wagerRemaining)} PKR</strong></div><div><span>Remaining withdrawal attempts</span><strong>{wagerTarget > 0 && wagerRemaining > 0 ? "Locked" : "Available"}</strong></div></div>
-            <small className="finance-tutorial">{wagerTarget <= 0 ? "An approved deposit will start the wagering progress." : wagerRemaining <= 0 ? "Wagering completed. Your settled winnings are available for withdrawal." : `Complete ${formatMoney(wagerRemaining)} PKR more in settled real bets to unlock winnings.`}</small>
-            <button className="finance-submit" disabled={busy || !financeSettings.withdrawalsEnabled}>{!financeSettings.withdrawalsEnabled ? "Withdrawals disabled" : busy ? "Submitting..." : "Submit withdrawal"}</button>
+            <button className="finance-submit" disabled={busy || !financeSettings.withdrawalsEnabled || wagerRemaining > 0}>{!financeSettings.withdrawalsEnabled ? "Withdrawals disabled" : wagerRemaining > 0 ? "Complete wagering first" : busy ? "Submitting..." : "Submit withdrawal"}</button>
           </form>
         )}
 

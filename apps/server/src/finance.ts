@@ -192,13 +192,20 @@ export async function createWithdrawalRequest(input: {
   const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
   if (settings?.withdrawalsEnabled === false) throw new Error("Withdrawals are currently disabled.");
   const amountMinor = toMinor(input.amount);
-  const minWithdrawal = Number(settings?.minWithdrawal ?? 500);
+  const minWithdrawal = Math.max(500, Number(settings?.minWithdrawal ?? 500));
   if (amountMinor < toMinor(minWithdrawal)) throw new Error(`Minimum withdrawal is ${minWithdrawal.toFixed(2)} PKR.`);
   if (!input.method.trim() || !input.accountDetails.trim()) throw new Error("Method and account details are required.");
   await enforceVipWithdrawalLimit(input.userId);
 
   let created: any;
   await mongoose.connection.transaction(async (session) => {
+    const account = await UserModel.findOne({ _id: input.userId, status: "ACTIVE" }).session(session).lean();
+    if (!account) throw new Error("Active user account not found.");
+    const accountWallet = walletFields(account);
+    if (accountWallet.wagerRequirementMinor > 0) {
+      throw new Error(`Complete ${fromMinor(accountWallet.wagerRequirementMinor).toFixed(2)} PKR more in settled bets before withdrawing.`);
+    }
+    if (accountWallet.balanceMinor < amountMinor) throw new Error("Insufficient available balance.");
     const user = await UserModel.findOneAndUpdate(
       { _id: input.userId, status: "ACTIVE", balanceMinor: { $gte: amountMinor } },
       {
