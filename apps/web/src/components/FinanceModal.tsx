@@ -111,16 +111,19 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
   };
 
   const uploadReceipt = async (file: File) => {
-    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME?.trim();
-    const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET?.trim();
-    if (!cloudName || !uploadPreset) throw new Error("Receipt uploads are not configured yet.");
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("upload_preset", uploadPreset);
-    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: "POST", body: formData });
-    const result = await response.json() as { secure_url?: string; error?: { message?: string } };
-    if (!response.ok || !result.secure_url) throw new Error(result.error?.message || "Payment receipt upload failed.");
-    return result.secure_url;
+    if (!file.type.startsWith("image/")) throw new Error("Payment receipt must be an image.");
+    if (file.size > 5 * 1024 * 1024) throw new Error("Payment receipt must be smaller than 5 MB.");
+    const fileDataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.onerror = () => reject(new Error("Unable to read payment receipt."));
+      reader.readAsDataURL(file);
+    });
+    const result = await apiRequest<{ receiptUrl: string }>("/api/uploads/payment-receipt", {
+      method: "POST",
+      body: JSON.stringify({ fileDataUrl })
+    });
+    return result.receiptUrl;
   };
 
   const submitDeposit = async (event: React.FormEvent) => {

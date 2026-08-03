@@ -16,6 +16,7 @@ import { bootstrapAdmin, createAuthSession, destroyAuthSession, hashPassword, is
 import { connectDatabase, disconnectDatabase } from "./database.js";
 import { createDepositRequest, createNowPaymentsDepositRequest, createWithdrawalRequest, reviewDeposit, reviewWithdrawal, settleNowPaymentsDeposit } from "./finance.js";
 import { createNowPayment, nowPaymentsPublicConfig, verifyNowPaymentsIpn } from "./nowpayments.js";
+import { uploadPaymentReceipt } from "./cloudinary.js";
 import {
   adminBonusSummary,
   claimLevelUpBonus,
@@ -72,7 +73,7 @@ await bootstrapAdmin();
 const app = express();
 app.set("trust proxy", 1);
 app.use(cors({ origin: corsOrigin, credentials: true }));
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "8mb" }));
 app.use(optionalAuth);
 
 app.get("/health", asyncRoute(async (_request, response) => {
@@ -369,6 +370,12 @@ app.post("/api/deposits", requireAuth, asyncRoute(async (request: AuthenticatedR
     note: cleanText(request.body?.note, 500)
   });
   response.status(201).json({ ok: true, deposit });
+}));
+
+app.post("/api/uploads/payment-receipt", requireAuth, asyncRoute(async (request, response) => {
+  const fileDataUrl = cleanText(request.body?.fileDataUrl, 7_000_000);
+  const receipt = await uploadPaymentReceipt(fileDataUrl);
+  response.status(201).json({ ok: true, receiptUrl: receipt.secureUrl, publicId: receipt.publicId });
 }));
 
 app.get("/api/payments/nowpayments/config", requireAuth, asyncRoute(async (_request, response) => {
