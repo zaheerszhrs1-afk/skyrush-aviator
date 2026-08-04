@@ -62,6 +62,8 @@ const userSchema = new Schema(
     language: { type: String, default: "English", maxlength: 40 },
     timezone: { type: String, default: "Asia/Karachi", maxlength: 80 },
     bio: { type: String, default: "", maxlength: 240 },
+    referralCode: { type: String, default: undefined, trim: true, uppercase: true, maxlength: 24, unique: true, sparse: true, index: true },
+    referredBy: { type: Schema.Types.ObjectId, ref: "User", index: true },
     marketingOptIn: { type: Boolean, default: true },
     gameNotifications: { type: Boolean, default: true },
     supportNotifications: { type: Boolean, default: true },
@@ -229,6 +231,24 @@ const monthlyBonusRuleSchema = new Schema(
   { _id: false, versionKey: false }
 );
 
+const referralInvitationRuleSchema = new Schema(
+  {
+    level: { type: Number, required: true, min: 1, max: 10 },
+    minInvites: { type: Number, required: true, min: 1 },
+    maxInvites: { type: Number, required: true, min: 1 },
+    reward: { type: Number, required: true, min: 0 }
+  },
+  { _id: false, versionKey: false }
+);
+
+const referralCommissionRateSchema = new Schema(
+  {
+    level: { type: Number, required: true, min: 1, max: 3 },
+    percent: { type: Number, required: true, min: 0, max: 100 }
+  },
+  { _id: false, versionKey: false }
+);
+
 const platformSettingsSchema = new Schema(
   {
     key: { type: String, default: "global", unique: true },
@@ -248,6 +268,11 @@ const platformSettingsSchema = new Schema(
     vipLevelBonusEnabled: { type: Boolean, default: true },
     vipMonthlyBonusEnabled: { type: Boolean, default: true },
     vipWithdrawalLimitsEnabled: { type: Boolean, default: true },
+    referralEnabled: { type: Boolean, default: true },
+    referralMinDeposit: { type: Number, default: 300, min: 1 },
+    referralDepositPercent: { type: Number, default: 5, min: 0, max: 100 },
+    referralInvitationRules: { type: [referralInvitationRuleSchema], default: [] },
+    referralCommissionRates: { type: [referralCommissionRateSchema], default: [] },
     vipTimezone: { type: String, default: "Asia/Karachi", maxlength: 80 },
     monthlyClaimStartDay: { type: Number, default: 1, min: 1, max: 28 },
     monthlyClaimWindowHours: { type: Number, default: 48, min: 1, max: 744 },
@@ -388,10 +413,12 @@ const bonusClaimSchema = new Schema(
   {
     claimKey: { type: String, required: true, unique: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    type: { type: String, enum: ["LEVEL_UP", "MONTHLY"], required: true, index: true },
+    type: { type: String, enum: ["LEVEL_UP", "MONTHLY", "REFERRAL_INVITATION", "REFERRAL_DEPOSIT", "REFERRAL_BET"], required: true, index: true },
     amountMinor: { type: Number, required: true, min: 1 },
     amount: { type: Number, required: true, min: 0.01 },
     vipLevel: { type: Number, default: 0, min: 0, max: 12 },
+    referredUserId: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    referralLevel: { type: Number, default: 0, min: 0, max: 10 },
     periodKey: { type: String, default: "", index: true },
     metadata: { type: Schema.Types.Mixed, default: {} }
   },

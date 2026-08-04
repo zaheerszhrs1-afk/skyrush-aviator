@@ -27,7 +27,7 @@ export interface CampaignItem {
 
 interface Props { placement: "LOGIN" | "GAME"; }
 
-const internalTargets = new Set(["BONUSES", "DEPOSIT", "WITHDRAW", "PROFILE", "FAQS", "LIVE_CHAT"]);
+const internalTargets = new Set(["BONUSES", "REFERRAL", "DEPOSIT", "WITHDRAW", "PROFILE", "FAQS", "LIVE_CHAT"]);
 
 const campaignStyle = (item: CampaignItem): CSSProperties => ({
   "--campaign-accent": item.design?.accentColor || "#ff6b8d",

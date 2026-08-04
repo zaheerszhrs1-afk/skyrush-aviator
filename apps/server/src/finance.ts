@@ -11,6 +11,7 @@ import {
 } from "./models.js";
 import { fromMinor, minorFromDocument, toMinor } from "./money.js";
 import { enforceVipWithdrawalLimit } from "./bonus.js";
+import { processReferralDeposit } from "./referral.js";
 
 function walletFields(user: any) {
   const balanceMinor = minorFromDocument(user, "balanceMinor", "balance");
@@ -307,6 +308,13 @@ async function processDepositReview(input: {
     (deposit as any).wageringPercentApplied = wageringPercent;
     (deposit as any).wagerRequirementMinor = wagerRequirementMinor;
     await deposit.save({ session });
+
+    await processReferralDeposit({
+      referredUserId: String(deposit.userId),
+      depositId: String(deposit._id),
+      amountMinor,
+      session
+    });
 
     const state = await PlatformStateModel.findOneAndUpdate(
       { key: "global" },

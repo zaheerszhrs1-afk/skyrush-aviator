@@ -188,7 +188,7 @@ export interface PlatformAuditItem {
   createdAt: string;
 }
 
-export type BonusSection = "LEVEL_UP" | "MONTHLY" | "WITHDRAWAL";
+export type BonusSection = "REFERRAL" | "LEVEL_UP" | "MONTHLY" | "WITHDRAWAL";
 
 export interface VipLevelRule {
   level: number;
@@ -204,6 +204,38 @@ export interface MonthlyBonusRule {
   bonus: number;
 }
 
+export interface ReferralInvitationRule {
+  level: number;
+  minInvites: number;
+  maxInvites: number;
+  reward: number;
+}
+
+export interface ReferralCommissionRate {
+  level: number;
+  percent: number;
+}
+
+export interface ReferralDashboard {
+  ok: true;
+  enabled: boolean;
+  code: string;
+  inviteUrl: string;
+  minDeposit: number;
+  stats: {
+    totalIncome: number;
+    totalInvites: number;
+    validInvites: number;
+    invitationBonus: number;
+    depositBonus: number;
+    betBonus: number;
+  };
+  team: { levelOne: number; levelTwo: number; levelThree: number; members: Array<{ id: string; name: string; phone: string; createdAt: string }> };
+  invitationRules: ReferralInvitationRule[];
+  commissionRates: ReferralCommissionRate[];
+  recentRewards: Array<{ id: string; type: "REFERRAL_INVITATION" | "REFERRAL_DEPOSIT" | "REFERRAL_BET"; amount: number; level: number; createdAt: string }>;
+}
+
 export interface BonusDashboard {
   ok: true;
   config: {
@@ -217,6 +249,11 @@ export interface BonusDashboard {
     monthlyClaimForceOpen: boolean;
     vipLevels: VipLevelRule[];
     monthlyBonusRules: MonthlyBonusRule[];
+    referralEnabled: boolean;
+    referralMinDeposit: number;
+    referralDepositPercent: number;
+    referralInvitationRules: ReferralInvitationRule[];
+    referralCommissionRates: ReferralCommissionRate[];
   };
   progress: {
     vipLevel: number;
@@ -260,9 +297,11 @@ export interface BonusDashboard {
   wallet: { bonusBudget: number };
   recentClaims: Array<{
     id: string;
-    type: "LEVEL_UP" | "MONTHLY";
+    type: "LEVEL_UP" | "MONTHLY" | "REFERRAL_INVITATION" | "REFERRAL_DEPOSIT" | "REFERRAL_BET";
     vipLevel: number;
     periodKey: string;
+    referralLevel?: number;
+    referredUserId?: string;
     amount: number;
     createdAt: string;
   }>;

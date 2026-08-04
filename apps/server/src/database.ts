@@ -11,7 +11,7 @@ import {
   WithdrawalRequestModel
 } from "./models.js";
 import { toMinor } from "./money.js";
-import { DEFAULT_MONTHLY_BONUS_RULES, DEFAULT_VIP_LEVELS } from "./bonus.js";
+import { DEFAULT_MONTHLY_BONUS_RULES, DEFAULT_REFERRAL_COMMISSION_RATES, DEFAULT_REFERRAL_INVITATION_RULES, DEFAULT_VIP_LEVELS } from "./bonus.js";
 
 const safeMinor = (value: unknown): number => {
   const amount = Number(value ?? 0);
@@ -326,6 +326,16 @@ async function migrateFinanceSettings(): Promise<void> {
       { $set: { wageringRequirementPercent: 30 } }
     ),
     PlatformSettingsModel.updateOne(
+      { key: "global", $or: [{ referralEnabled: { $exists: false } }, { referralInvitationRules: { $exists: false } }] },
+      { $set: {
+        referralEnabled: true,
+        referralMinDeposit: 300,
+        referralDepositPercent: 5,
+        referralInvitationRules: DEFAULT_REFERRAL_INVITATION_RULES,
+        referralCommissionRates: DEFAULT_REFERRAL_COMMISSION_RATES
+      } }
+    ),
+    PlatformSettingsModel.updateOne(
       { key: "global", $or: [{ vipLevels: { $exists: false } }, { vipLevels: { $size: 0 } }] },
       { $set: {
         vipEnabled: true,
@@ -336,6 +346,11 @@ async function migrateFinanceSettings(): Promise<void> {
         monthlyClaimStartDay: 1,
         monthlyClaimWindowHours: 48,
         monthlyClaimForceOpen: false,
+        referralEnabled: true,
+        referralMinDeposit: 300,
+        referralDepositPercent: 5,
+        referralInvitationRules: DEFAULT_REFERRAL_INVITATION_RULES,
+        referralCommissionRates: DEFAULT_REFERRAL_COMMISSION_RATES,
         vipLevels: DEFAULT_VIP_LEVELS,
         monthlyBonusRules: DEFAULT_MONTHLY_BONUS_RULES
       } }

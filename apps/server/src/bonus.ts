@@ -27,6 +27,18 @@ export interface MonthlyBonusRule {
   bonus: number;
 }
 
+export interface ReferralInvitationRule {
+  level: number;
+  minInvites: number;
+  maxInvites: number;
+  reward: number;
+}
+
+export interface ReferralCommissionRate {
+  level: number;
+  percent: number;
+}
+
 export interface VipConfig {
   vipEnabled: boolean;
   vipLevelBonusEnabled: boolean;
@@ -38,6 +50,11 @@ export interface VipConfig {
   monthlyClaimForceOpen: boolean;
   vipLevels: VipLevelRule[];
   monthlyBonusRules: MonthlyBonusRule[];
+  referralEnabled: boolean;
+  referralMinDeposit: number;
+  referralDepositPercent: number;
+  referralInvitationRules: ReferralInvitationRule[];
+  referralCommissionRates: ReferralCommissionRate[];
 }
 
 export const DEFAULT_VIP_LEVELS: VipLevelRule[] = [
@@ -70,6 +87,25 @@ export const DEFAULT_MONTHLY_BONUS_RULES: MonthlyBonusRule[] = [
   { requiredDeposit: 2_000_000, requiredTurnover: 10_000_000, bonus: 6_000 },
   { requiredDeposit: 6_000_000, requiredTurnover: 30_000_000, bonus: 10_000 },
   { requiredDeposit: 10_000_000, requiredTurnover: 50_000_000, bonus: 20_000 }
+];
+
+export const DEFAULT_REFERRAL_INVITATION_RULES: ReferralInvitationRule[] = [
+  { level: 1, minInvites: 1, maxInvites: 1, reward: 200 },
+  { level: 2, minInvites: 2, maxInvites: 50, reward: 250 },
+  { level: 3, minInvites: 51, maxInvites: 150, reward: 300 },
+  { level: 4, minInvites: 151, maxInvites: 1000, reward: 350 },
+  { level: 5, minInvites: 1001, maxInvites: 5000, reward: 400 },
+  { level: 6, minInvites: 5001, maxInvites: 15000, reward: 450 },
+  { level: 7, minInvites: 15001, maxInvites: 50000, reward: 550 },
+  { level: 8, minInvites: 50001, maxInvites: 100000, reward: 700 },
+  { level: 9, minInvites: 100001, maxInvites: 150000, reward: 850 },
+  { level: 10, minInvites: 150001, maxInvites: 999999, reward: 1000 }
+];
+
+export const DEFAULT_REFERRAL_COMMISSION_RATES: ReferralCommissionRate[] = [
+  { level: 1, percent: 0.3 },
+  { level: 2, percent: 0.2 },
+  { level: 3, percent: 0.1 }
 ];
 
 const finite = (value: unknown, fallback: number): number => {
@@ -108,6 +144,30 @@ export function normalizeMonthlyBonusRules(value: unknown): MonthlyBonusRule[] {
   return result;
 }
 
+export function normalizeReferralInvitationRules(value: unknown): ReferralInvitationRule[] {
+  const input = Array.isArray(value) ? value : [];
+  const mapped = input.map((item: any, index) => ({
+    level: Math.min(10, Math.max(1, Math.floor(finite(item?.level, index + 1)))),
+    minInvites: Math.max(1, Math.floor(finite(item?.minInvites, 1))),
+    maxInvites: Math.max(1, Math.floor(finite(item?.maxInvites, 1))),
+    reward: Math.max(0, finite(item?.reward, 0))
+  })).map((item) => ({ ...item, maxInvites: Math.max(item.minInvites, item.maxInvites) }))
+    .filter((item) => item.reward > 0);
+  const result = mapped.length > 0 ? mapped : DEFAULT_REFERRAL_INVITATION_RULES.map((item) => ({ ...item }));
+  result.sort((left, right) => left.minInvites - right.minInvites || left.level - right.level);
+  return result;
+}
+
+export function normalizeReferralCommissionRates(value: unknown): ReferralCommissionRate[] {
+  const input = Array.isArray(value) ? value : [];
+  const mapped = input.map((item: any, index) => ({
+    level: Math.min(3, Math.max(1, Math.floor(finite(item?.level, index + 1)))),
+    percent: Math.min(100, Math.max(0, finite(item?.percent, 0)))
+  }));
+  const byLevel = new Map(mapped.map((item) => [item.level, item]));
+  return DEFAULT_REFERRAL_COMMISSION_RATES.map((fallback) => ({ ...(byLevel.get(fallback.level) ?? fallback) }));
+}
+
 export function normalizeVipTimezone(value: unknown): string {
   const candidate = String(value || "Asia/Karachi").trim() || "Asia/Karachi";
   try {
@@ -129,7 +189,12 @@ export function vipConfigFromSettings(settings: any): VipConfig {
     monthlyClaimWindowHours: Math.min(744, Math.max(1, Math.floor(finite(settings?.monthlyClaimWindowHours, 48)))),
     monthlyClaimForceOpen: settings?.monthlyClaimForceOpen === true,
     vipLevels: normalizeVipLevels(settings?.vipLevels),
-    monthlyBonusRules: normalizeMonthlyBonusRules(settings?.monthlyBonusRules)
+    monthlyBonusRules: normalizeMonthlyBonusRules(settings?.monthlyBonusRules),
+    referralEnabled: settings?.referralEnabled !== false,
+    referralMinDeposit: Math.max(1, finite(settings?.referralMinDeposit, 300)),
+    referralDepositPercent: Math.min(100, Math.max(0, finite(settings?.referralDepositPercent, 5))),
+    referralInvitationRules: normalizeReferralInvitationRules(settings?.referralInvitationRules),
+    referralCommissionRates: normalizeReferralCommissionRates(settings?.referralCommissionRates)
   };
 }
 
@@ -280,7 +345,7 @@ export async function getBonusDashboard(userId: string): Promise<any> {
   const [currentMetrics, previousMetrics, claims] = await Promise.all([
     aggregateMetrics(userId, currentMonth),
     aggregateMetrics(userId, previousMonth),
-    BonusClaimModel.find({ userId }).select("type vipLevel periodKey amount createdAt").sort({ createdAt: -1 }).lean()
+    BonusClaimModel.find({ userId }).select("type vipLevel periodKey referralLevel referredUserId amount createdAt").sort({ createdAt: -1 }).lean()
   ]);
   const vipLevel = config.vipEnabled
     ? calculateVipLevel(lifetimeMetrics.depositMinor, lifetimeMetrics.turnoverMinor, config.vipLevels)
@@ -367,6 +432,8 @@ export async function getBonusDashboard(userId: string): Promise<any> {
       type: item.type,
       vipLevel: Number(item.vipLevel ?? 0),
       periodKey: String(item.periodKey ?? ""),
+      referralLevel: Number(item.referralLevel ?? 0),
+      referredUserId: item.referredUserId ? String(item.referredUserId) : undefined,
       amount: Number(item.amount ?? fromMinor(item.amountMinor ?? 0)),
       createdAt: item.createdAt
     }))
@@ -558,6 +625,8 @@ export async function adminBonusSummary(): Promise<any> {
       amount: Number(item.amount ?? fromMinor(item.amountMinor ?? 0)),
       vipLevel: Number(item.vipLevel ?? 0),
       periodKey: String(item.periodKey ?? ""),
+      referralLevel: Number(item.referralLevel ?? 0),
+      referredUserId: item.referredUserId ? String(item.referredUserId) : undefined,
       createdAt: item.createdAt
     }))
   };

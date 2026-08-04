@@ -17,12 +17,15 @@ import { connectDatabase, disconnectDatabase } from "./database.js";
 import { createDepositRequest, createNowPaymentsDepositRequest, createWithdrawalRequest, reviewDeposit, reviewWithdrawal, settleNowPaymentsDeposit } from "./finance.js";
 import { createNowPayment, nowPaymentsPublicConfig, verifyNowPaymentsIpn } from "./nowpayments.js";
 import { uploadPaymentReceipt } from "./cloudinary.js";
+import { createReferralCode, getReferralDashboard } from "./referral.js";
 import {
   adminBonusSummary,
   claimLevelUpBonus,
   claimMonthlyBonus,
   fundBonusWallet,
   getBonusDashboard,
+  normalizeReferralCommissionRates,
+  normalizeReferralInvitationRules,
   normalizeMonthlyBonusRules,
   normalizeVipLevels
 } from "./bonus.js";
@@ -84,6 +87,7 @@ app.post("/api/auth/register", asyncRoute(async (request, response) => {
   const name = cleanText(request.body?.name, 80);
   const email = cleanText(request.body?.email, 160).toLowerCase();
   const phone = normalizePhone(request.body?.phone);
+  const referralCode = cleanText(request.body?.referralCode, 24).toUpperCase();
   const password = String(request.body?.password ?? "");
   if (name.length < 2) {
     response.status(400).json({ ok: false, message: "Name must contain at least 2 characters." });
@@ -109,11 +113,18 @@ app.post("/api/auth/register", asyncRoute(async (request, response) => {
     response.status(409).json({ ok: false, message: "An account already exists with this phone number." });
     return;
   }
+  const referrer = referralCode ? await UserModel.findOne({ referralCode, role: "USER", status: "ACTIVE" }).select("_id").lean() : null;
+  if (referralCode && !referrer) {
+    response.status(400).json({ ok: false, message: "This referral link is no longer valid." });
+    return;
+  }
 
   const user = await UserModel.create({
     name,
     email,
     phone,
+    referralCode: await createReferralCode(),
+    ...(referrer ? { referredBy: referrer._id } : {}),
     passwordHash: await hashPassword(password),
     authProvider: "PASSWORD",
     role: "USER",
@@ -164,9 +175,17 @@ app.post("/api/auth/google", asyncRoute(async (request, response) => {
   }
 
   if (!user) {
+    const referralCode = cleanText(request.body?.referralCode, 24).toUpperCase();
+    const referrer = referralCode ? await UserModel.findOne({ referralCode, role: "USER", status: "ACTIVE" }).select("_id").lean() : null;
+    if (referralCode && !referrer) {
+      response.status(400).json({ ok: false, message: "This referral link is no longer valid." });
+      return;
+    }
     user = await UserModel.create({
       name: cleanText(payload?.name || email.split("@")[0], 80),
       email,
+      referralCode: await createReferralCode(),
+      ...(referrer ? { referredBy: referrer._id } : {}),
       googleSub,
       avatarUrl: cleanText(payload?.picture, 500),
       authProvider: "GOOGLE",
@@ -513,6 +532,10 @@ app.get("/api/withdrawals/me", requireAuth, asyncRoute(async (request: Authentic
 
 app.get("/api/bonuses", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
   response.json(await getBonusDashboard(request.authUser!.id));
+}));
+
+app.get("/api/referrals", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
+  response.json(await getReferralDashboard(request.authUser!.id));
 }));
 
 app.post("/api/bonuses/level-up/claim", requireAuth, asyncRoute(async (request: AuthenticatedRequest, response) => {
@@ -950,6 +973,8 @@ app.get("/api/admin/bonuses", requireAdmin, asyncRoute(async (_request, response
 app.patch("/api/admin/bonuses/settings", requireAdmin, asyncRoute(async (request: AuthenticatedRequest, response) => {
   const vipLevels = normalizeVipLevels(request.body?.vipLevels);
   const monthlyBonusRules = normalizeMonthlyBonusRules(request.body?.monthlyBonusRules);
+  const referralInvitationRules = normalizeReferralInvitationRules(request.body?.referralInvitationRules);
+  const referralCommissionRates = normalizeReferralCommissionRates(request.body?.referralCommissionRates);
   const monthlyClaimStartDay = Math.min(28, Math.max(1, Math.floor(numberInput(request.body?.monthlyClaimStartDay))));
   const monthlyClaimWindowHours = Math.min(744, Math.max(1, Math.floor(numberInput(request.body?.monthlyClaimWindowHours))));
   if (![monthlyClaimStartDay, monthlyClaimWindowHours].every(Number.isFinite)) {
@@ -963,6 +988,11 @@ app.patch("/api/admin/bonuses/settings", requireAdmin, asyncRoute(async (request
       vipLevelBonusEnabled: request.body?.vipLevelBonusEnabled !== false,
       vipMonthlyBonusEnabled: request.body?.vipMonthlyBonusEnabled !== false,
       vipWithdrawalLimitsEnabled: request.body?.vipWithdrawalLimitsEnabled !== false,
+      referralEnabled: request.body?.referralEnabled !== false,
+      referralMinDeposit: Math.max(1, Number.isFinite(numberInput(request.body?.referralMinDeposit)) ? numberInput(request.body?.referralMinDeposit) : 300),
+      referralDepositPercent: Math.min(100, Math.max(0, Number.isFinite(numberInput(request.body?.referralDepositPercent)) ? numberInput(request.body?.referralDepositPercent) : 5)),
+      referralInvitationRules,
+      referralCommissionRates,
       vipTimezone: cleanText(request.body?.vipTimezone || "Asia/Karachi", 80),
       monthlyClaimStartDay,
       monthlyClaimWindowHours,

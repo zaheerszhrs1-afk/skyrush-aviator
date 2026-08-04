@@ -15,6 +15,7 @@ import {
   type TransactionType
 } from "./models.js";
 import { fromMinor, minorFromDocument, toMinor } from "./money.js";
+import { processReferralBet } from "./referral.js";
 import type { BetSlot, PublicBet, RoundHistoryItem, RoundPhase, RoundSnapshot, RoundTick, WalletSnapshot } from "./types.js";
 
 const WAITING_MS = 8_000;
@@ -710,6 +711,7 @@ export class GameEngine {
           ],
           { session, ordered: true }
         );
+        await processReferralBet({ bettorId: userId, betId: bet.id, stakeMinor: amountMinor, session });
       });
 
       this.updateAccountingCache(stateAfter);
@@ -1277,6 +1279,7 @@ export class GameEngine {
         }],
         { session, ordered: true }
       );
+      await processReferralBet({ bettorId: String(dbBet.userId), betId: String(dbBet.betId), stakeMinor: amountMinor, session });
     });
 
     if (stateAfter) this.updateAccountingCache(stateAfter);

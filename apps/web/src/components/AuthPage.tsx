@@ -3,10 +3,10 @@ import { apiRequest } from "../lib/api";
 import type { AuthUser } from "../types";
 import { Logo } from "./Logo";
 
-interface AuthPageProps { onAuthenticated: (user: AuthUser) => void; onBackToLanding?: () => void; initialMode?: "LOGIN" | "REGISTER"; }
+interface AuthPageProps { onAuthenticated: (user: AuthUser) => void; onBackToLanding?: () => void; initialMode?: "LOGIN" | "REGISTER"; referralCode?: string; }
 type Mode = "LOGIN" | "REGISTER" | "FORGOT" | "RESET";
 
-export function AuthPage({ onAuthenticated, onBackToLanding, initialMode = "LOGIN" }: AuthPageProps) {
+export function AuthPage({ onAuthenticated, onBackToLanding, initialMode = "LOGIN", referralCode = "" }: AuthPageProps) {
   const resetToken = new URLSearchParams(window.location.search).get("token") ?? "";
   const [mode, setMode] = useState<Mode>(window.location.pathname.startsWith("/reset-password") && resetToken ? "RESET" : initialMode);
   const [name, setName] = useState("");
@@ -36,7 +36,7 @@ export function AuthPage({ onAuthenticated, onBackToLanding, initialMode = "LOGI
         client_id: googleClientId,
         callback: (response) => {
           setBusy(true); setMessage(""); setSuccess(false);
-          void apiRequest<{ user: AuthUser }>("/api/auth/google", { method: "POST", body: JSON.stringify({ credential: response.credential }) })
+          void apiRequest<{ user: AuthUser }>("/api/auth/google", { method: "POST", body: JSON.stringify({ credential: response.credential, referralCode: referralCode || undefined }) })
             .then((result) => onAuthenticatedRef.current(result.user))
             .catch((error) => setMessage(error instanceof Error ? error.message : "Google sign-in failed."))
             .finally(() => setBusy(false));
@@ -46,7 +46,7 @@ export function AuthPage({ onAuthenticated, onBackToLanding, initialMode = "LOGI
       google.accounts.id.renderButton(googleButton.current, { type: "standard", theme: "filled_black", size: "large", text: "continue_with", shape: "pill", width: 360 });
     };
     render();
-  }, [googleClientId, mode]);
+  }, [googleClientId, mode, referralCode]);
 
   const switchMode = (next: Mode) => { setMode(next); setMessage(""); setSuccess(false); setPassword(""); setConfirmPassword(""); };
 
@@ -67,7 +67,7 @@ export function AuthPage({ onAuthenticated, onBackToLanding, initialMode = "LOGI
         return;
       }
       const result = await apiRequest<{ user: AuthUser }>(mode === "LOGIN" ? "/api/auth/login" : "/api/auth/register", {
-        method: "POST", body: JSON.stringify(mode === "LOGIN" ? { identifier: email, password } : { name, email, phone, password })
+        method: "POST", body: JSON.stringify(mode === "LOGIN" ? { identifier: email, password } : { name, email, phone, password, referralCode: referralCode || undefined })
       });
       onAuthenticated(result.user);
     } catch (error) {
@@ -86,6 +86,7 @@ export function AuthPage({ onAuthenticated, onBackToLanding, initialMode = "LOGI
       {mode === "LOGIN" && googleClientId && <><div className="google-login-wrap" aria-busy={busy}><div ref={googleButton} /><small>Google sign-in is available for user accounts only.</small></div><div className="auth-divider"><span>or use email</span></div></>}
 
       <form onSubmit={submit}>
+        {mode === "REGISTER" && referralCode && <div className="referral-applied">Referral link applied · you are joining through an invitation.</div>}
         {mode === "REGISTER" && <label>Full name<input value={name} onChange={(event) => setName(event.target.value)} required minLength={2} autoComplete="name" /></label>}
         {mode !== "RESET" && <label>{mode === "LOGIN" ? "Email or phone number" : "Email"}<input value={email} onChange={(event) => setEmail(event.target.value)} required type={mode === "LOGIN" ? "text" : "email"} autoComplete={mode === "LOGIN" ? "username" : "email"} placeholder={mode === "LOGIN" ? "you@example.com or +92..." : undefined} /></label>}
         {mode === "REGISTER" && <label>Phone number<input value={phone} onChange={(event) => setPhone(event.target.value)} required type="tel" autoComplete="tel" placeholder="+92 300 1234567" /></label>}
