@@ -17,14 +17,13 @@ body { margin: 0; min-width: 320px; min-height: 100vh; overflow-x: hidden; }
 button, input { font: inherit; }
 button { color: inherit; }
 .app-shell { min-height: 100vh; background: radial-gradient(circle at 50% 12%, #1a1d25 0, #0b0c0f 44%, #08090b 100%); }
-.app-download-promo { min-height: 42px; display:flex; align-items:center; gap:10px; padding:7px 18px; background:#162817; border-bottom:1px solid #28522a; color:#e7f6e4; }
-.app-download-promo__icon { width:26px; height:26px; display:grid; place-items:center; flex:0 0 auto; border-radius:8px; background:#20b408; color:#071108; font-size:17px; font-weight:900; }
-.app-download-promo__copy { min-width:0; display:flex; align-items:baseline; gap:9px; }
-.app-download-promo__copy strong { font-size:13px; white-space:nowrap; }
-.app-download-promo__copy span { color:#a6c3a5; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.app-download-promo__actions { margin-left:auto; display:flex; align-items:center; gap:8px; flex:0 0 auto; }
-.app-download-promo__actions a,.app-download-promo__actions button { min-height:28px; padding:4px 14px; border:1px solid #5fd466; border-radius:999px; background:#20b408; color:#071108; font-size:12px; font-weight:800; text-decoration:none; cursor:pointer; }
-.app-download-promo__actions button { background:transparent; color:#dff7df; }
+.app-download-promo { min-height:54px; display:flex; align-items:center; gap:12px; padding:7px 16px; background:linear-gradient(180deg,#31231d,#241b18); border-bottom:1px solid #4b3224; color:#fff; }
+.app-download-promo__close { width:28px; height:34px; flex:0 0 auto; padding:0; border:0; background:transparent; color:#9b938e; font-size:30px; font-weight:300; line-height:1; cursor:pointer; }
+.app-download-promo__logo { width:36px; height:36px; flex:0 0 auto; object-fit:cover; border-radius:6px; }
+.app-download-promo__copy { min-width:0; display:flex; align-items:center; }
+.app-download-promo__copy strong { overflow:hidden; color:#f4ede8; font-size:13px; font-weight:750; text-overflow:ellipsis; white-space:nowrap; }
+.app-download-promo__actions { margin-left:auto; display:flex; align-items:center; flex:0 0 auto; }
+.app-download-promo__actions a { min-width:92px; min-height:34px; padding:8px 16px; border:0; border-radius:20px; background:#caff00; color:#151a00; font-size:12px; font-weight:900; text-align:center; text-decoration:none; cursor:pointer; box-shadow:0 3px 12px rgba(202,255,0,.2); }
 .topbar { height: 82px; display: flex; align-items: center; gap: 20px; padding: 0 24px; background: #1d1f28; border-bottom: 1px solid #20232b; }
 .back { border: 0; background: transparent; font-size: 44px; line-height: 1; cursor: pointer; }
 .brand { display: flex; align-items: center; flex: 0 0 auto; padding: 0; border: 0; background: transparent; cursor: pointer; }
@@ -63,13 +62,11 @@ button { color: inherit; }
 @media (max-width: 520px){.game-name{font-size:20px}.balance strong{font-size:12px}.game-graph{min-height:280px;border-radius:14px}.multiplier-block strong{font-size:58px}.bet-panel{border-radius:15px}.bet-main-row{grid-template-columns:135px 1fr;gap:7px}.primary-bet{min-height:78px;font-size:19px}.auto-row{grid-template-columns:1fr 1.3fr 60px}.bets-card{border-radius:15px}.topbar{gap:9px}.back{font-size:35px}.top-actions{gap:5px}.profile{width:34px;height:34px}.plane-position{width:128px;height:72px}}
 
 @media (max-width: 900px) {
-  .app-download-promo { gap:8px; padding:7px 10px; }
-  .app-download-promo__icon { width:24px; height:24px; }
-  .app-download-promo__copy { display:block; }
-  .app-download-promo__copy strong,.app-download-promo__copy span { display:block; max-width:calc(100vw - 170px); }
-  .app-download-promo__copy span { margin-top:1px; }
-  .app-download-promo__actions { gap:5px; }
-  .app-download-promo__actions a,.app-download-promo__actions button { padding-left:10px; padding-right:10px; }
+  .app-download-promo { gap:8px; padding:7px 9px; }
+  .app-download-promo__close { width:28px; }
+  .app-download-promo__logo { width:34px; height:34px; }
+  .app-download-promo__copy strong { max-width:calc(100vw - 180px); font-size:12px; }
+  .app-download-promo__actions a { min-width:82px; padding-right:12px; padding-left:12px; }
 }
 
 /* Desktop game layout matched to the supplied reference. */
@@ -91,7 +88,7 @@ button { color: inherit; }
     background: #08090b;
   }
 
-  .website-shell .game-layout { min-height: calc(100vh - 162px); }
+  .website-shell .game-layout { min-height: calc(100vh - 172px); }
 
   .topbar {
     height: 72px;
@@ -2265,10 +2262,10 @@ button { color: inherit; }
 .app-bottom-nav{display:none}
 html[data-b9t9-route="app"] body{overscroll-behavior-y:none;background:#08090b}
 html[data-b9t9-route="app"] .app-shell{padding-bottom:76px}
-html[data-b9t9-route="app"] .app-bottom-nav{position:fixed;z-index:190;right:0;bottom:0;left:0;display:grid;grid-template-columns:repeat(5,1fr);gap:3px;padding:7px 8px max(7px,env(safe-area-inset-bottom));border-top:1px solid #2b3138;background:rgba(17,20,24,.97);box-shadow:0 -12px 35px rgba(0,0,0,.38);backdrop-filter:blur(18px)}
-.app-bottom-nav button{display:grid;justify-items:center;gap:4px;min-width:0;padding:6px 3px;border:0;border-radius:11px;background:transparent;color:#7f8992;font-size:9px;font-weight:800;cursor:pointer;transition:background .16s ease,color .16s ease}
-.app-bottom-nav button svg{width:20px;height:20px}.app-bottom-nav button.active{background:#1c3824;color:#9df1aa}.app-bottom-nav button:active{transform:scale(.97)}
+html[data-b9t9-route="app"] .app-bottom-nav{position:fixed;z-index:190;right:0;bottom:0;left:0;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:7px 8px max(8px,env(safe-area-inset-bottom));border-top:1px solid #30363b;background:rgba(24,29,32,.98);box-shadow:0 -10px 28px rgba(0,0,0,.42);backdrop-filter:blur(18px)}
+.app-bottom-nav button{position:relative;display:grid;justify-items:center;gap:3px;min-width:0;padding:4px 3px;border:0;border-radius:12px;background:transparent;color:#879096;font-size:10px;font-weight:700;cursor:pointer;transition:background .16s ease,color .16s ease}
+.app-bottom-nav__icon{display:grid;place-items:center;width:31px;height:27px;border-radius:10px}.app-bottom-nav button svg{width:21px;height:21px}.app-bottom-nav button.active{color:#d2ff38}.app-bottom-nav button.active .app-bottom-nav__icon{background:#39472b;color:#d2ff38}.app-bottom-nav button.active::after{content:"";position:absolute;right:31%;bottom:-3px;left:31%;height:2px;border-radius:99px;background:#d2ff38}.app-bottom-nav button:active{transform:scale(.97)}
 html[data-b9t9-route="app"] .floating-whatsapp{right:10px!important;bottom:84px!important}
 html[data-b9t9-route="app"] .floating-support-mobile{bottom:138px!important}
 html[data-b9t9-route="app"]:has(.game-layout.chat-open) .app-bottom-nav{display:none}
-@media(max-width:560px){html[data-b9t9-route="app"] .app-bottom-nav{padding-right:5px;padding-left:5px}.app-bottom-nav button{font-size:8px}.app-bottom-nav button svg{width:19px;height:19px}}
+@media(max-width:560px){html[data-b9t9-route="app"] .app-bottom-nav{padding-right:5px;padding-left:5px}.app-bottom-nav button{font-size:9px}.app-bottom-nav button svg{width:20px;height:20px}}

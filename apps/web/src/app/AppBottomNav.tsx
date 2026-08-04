@@ -26,5 +26,5 @@ export function AppBottomNav({ active, loggedIn, onGame, onChat, onWallet, onPro
     { key: "WALLET", label: "Wallet", onClick: onWallet },
     { key: "PROFILE", label: loggedIn ? "Profile" : "Login", onClick: onProfile }
   ];
-  return <nav className="app-bottom-nav" aria-label="App navigation">{items.map((item) => <button className={active === item.key ? "active" : ""} key={item.key} type="button" onClick={item.onClick}><NavIcon kind={item.key} /><span>{item.label}</span></button>)}</nav>;
+  return <nav className="app-bottom-nav" aria-label="App navigation">{items.map((item) => <button className={active === item.key ? "active" : ""} key={item.key} type="button" aria-current={active === item.key ? "page" : undefined} onClick={item.onClick}><span className="app-bottom-nav__icon"><NavIcon kind={item.key} /></span><span>{item.label}</span></button>)}</nav>;
 }

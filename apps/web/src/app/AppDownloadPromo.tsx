@@ -1,42 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
-
-type InstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-};
+import { useMemo, useState } from "react";
 
 const fallbackAndroidUrl = "/downloads/b9t9.apk";
 
 export function AppDownloadPromo() {
-  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [dismissed, setDismissed] = useState(false);
   const androidUrl = useMemo(() => import.meta.env.VITE_ANDROID_APP_URL?.trim() || fallbackAndroidUrl, []);
 
-  useEffect(() => {
-    const onInstallPrompt = (event: Event) => {
-      event.preventDefault();
-      setInstallPrompt(event as InstallPromptEvent);
-    };
-
-    window.addEventListener("beforeinstallprompt", onInstallPrompt);
-    return () => window.removeEventListener("beforeinstallprompt", onInstallPrompt);
-  }, []);
-
-  const installApp = async () => {
-    if (!installPrompt) return;
-    await installPrompt.prompt();
-    await installPrompt.userChoice;
-    setInstallPrompt(null);
-  };
+  if (dismissed) return null;
 
   return (
     <aside className="app-download-promo" aria-label="B9T9 app download">
-      <div className="app-download-promo__icon" aria-hidden="true">▣</div>
+      <button className="app-download-promo__close" type="button" aria-label="Close app download banner" onClick={() => setDismissed(true)}>×</button>
+      <img className="app-download-promo__logo" src="/b9t9-logo.webp" alt="B9T9" />
       <div className="app-download-promo__copy">
-        <strong>Free Rs 100 · Better experience</strong>
-        <span>Experience one-stop gaming with the B9T9 app.</span>
+        <strong>Free Rs 100 Better Experience!</strong>
       </div>
       <div className="app-download-promo__actions">
-        {installPrompt && <button type="button" onClick={() => void installApp()}>Install app</button>}
         <a href={androidUrl} download={!androidUrl.startsWith("http")} aria-label="Download the B9T9 Android app">Download</a>
       </div>
     </aside>
