@@ -54,7 +54,7 @@ export default function App() {
   useEffect(() => {
     if (!user && referralCodeFromUrl && !authRoute) {
       const authPath = appRoute ? "/app/register" : "/register";
-      window.location.replace(\`\${authPath}?ref=\${encodeURIComponent(referralCodeFromUrl)}\`);
+      window.location.replace(`${authPath}?ref=${encodeURIComponent(referralCodeFromUrl)}`);
     }
   }, [appRoute, authRoute, referralCodeFromUrl, user]);
   useEffect(() => { if (user?.role === "USER") void apiRequest<{ unread: number }>("/api/notifications").then((result) => setNotificationUnread(result.unread)).catch(() => undefined); }, [user?.id]);
