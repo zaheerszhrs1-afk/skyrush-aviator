@@ -17,6 +17,14 @@ body { margin: 0; min-width: 320px; min-height: 100vh; overflow-x: hidden; }
 button, input { font: inherit; }
 button { color: inherit; }
 .app-shell { min-height: 100vh; background: radial-gradient(circle at 50% 12%, #1a1d25 0, #0b0c0f 44%, #08090b 100%); }
+.app-download-promo { min-height: 42px; display:flex; align-items:center; gap:10px; padding:7px 18px; background:#162817; border-bottom:1px solid #28522a; color:#e7f6e4; }
+.app-download-promo__icon { width:26px; height:26px; display:grid; place-items:center; flex:0 0 auto; border-radius:8px; background:#20b408; color:#071108; font-size:17px; font-weight:900; }
+.app-download-promo__copy { min-width:0; display:flex; align-items:baseline; gap:9px; }
+.app-download-promo__copy strong { font-size:13px; white-space:nowrap; }
+.app-download-promo__copy span { color:#a6c3a5; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.app-download-promo__actions { margin-left:auto; display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+.app-download-promo__actions a,.app-download-promo__actions button { min-height:28px; padding:4px 14px; border:1px solid #5fd466; border-radius:999px; background:#20b408; color:#071108; font-size:12px; font-weight:800; text-decoration:none; cursor:pointer; }
+.app-download-promo__actions button { background:transparent; color:#dff7df; }
 .topbar { height: 82px; display: flex; align-items: center; gap: 20px; padding: 0 24px; background: #1d1f28; border-bottom: 1px solid #20232b; }
 .back { border: 0; background: transparent; font-size: 44px; line-height: 1; cursor: pointer; }
 .brand { display: flex; align-items: center; flex: 0 0 auto; padding: 0; border: 0; background: transparent; cursor: pointer; }
@@ -54,6 +62,16 @@ button { color: inherit; }
 @media (max-width: 900px){.topbar{height:64px;padding:0 12px}.brand-logo{width:44px;height:44px;border-radius:12px}.game-title-row{height:42px}.balance{min-width:0;font-size:12px;padding:0 10px}.connection{display:none}.game-layout{display:flex;flex-direction:column;padding:4px}.center-column{order:1}.bets-card{order:2;max-height:420px}.game-graph{min-height:330px}.bet-panels{grid-template-columns:1fr}.top-actions button{display:none}.history-strip{gap:12px}.plane-position{width:146px;height:82px}}
 @media (max-width: 520px){.game-name{font-size:20px}.balance strong{font-size:12px}.game-graph{min-height:280px;border-radius:14px}.multiplier-block strong{font-size:58px}.bet-panel{border-radius:15px}.bet-main-row{grid-template-columns:135px 1fr;gap:7px}.primary-bet{min-height:78px;font-size:19px}.auto-row{grid-template-columns:1fr 1.3fr 60px}.bets-card{border-radius:15px}.topbar{gap:9px}.back{font-size:35px}.top-actions{gap:5px}.profile{width:34px;height:34px}.plane-position{width:128px;height:72px}}
 
+@media (max-width: 900px) {
+  .app-download-promo { gap:8px; padding:7px 10px; }
+  .app-download-promo__icon { width:24px; height:24px; }
+  .app-download-promo__copy { display:block; }
+  .app-download-promo__copy strong,.app-download-promo__copy span { display:block; max-width:calc(100vw - 170px); }
+  .app-download-promo__copy span { margin-top:1px; }
+  .app-download-promo__actions { gap:5px; }
+  .app-download-promo__actions a,.app-download-promo__actions button { padding-left:10px; padding-right:10px; }
+}
+
 /* Desktop game layout matched to the supplied reference. */
 @media (min-width: 901px) {
   html,
@@ -72,6 +90,8 @@ button { color: inherit; }
     overflow: hidden;
     background: #08090b;
   }
+
+  .website-shell .game-layout { min-height: calc(100vh - 162px); }
 
   .topbar {
     height: 72px;
