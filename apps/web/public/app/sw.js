@@ -1,4 +1,4 @@
-const CACHE_NAME = "b9t9-app-shell-v1";
+const CACHE_NAME = "b9t9-app-shell-v2";
 const APP_SHELL = [
   "/app/",
   "/app/manifest.webmanifest",
