@@ -5,6 +5,7 @@ services:
       args:
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
         VITE_EASYPAISA_RAAST_ID: ${VITE_EASYPAISA_RAAST_ID:-984046332}
+        VITE_ANDROID_APP_URL: ${VITE_ANDROID_APP_URL:-}
     container_name: b9t9-app
     restart: unless-stopped
     init: true
