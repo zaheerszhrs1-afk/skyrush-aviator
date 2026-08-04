@@ -2249,3 +2249,15 @@ button { color: inherit; }
 /* Allow the WhatsApp shortcut to be repositioned without triggering a link drag. */
 .floating-whatsapp{touch-action:none;user-select:none;cursor:grab}
 .floating-whatsapp.dragging{cursor:grabbing;transition:none}
+
+/* App-only bottom navigation for the installable /app surface. */
+.app-bottom-nav{display:none}
+html[data-b9t9-route="app"] body{overscroll-behavior-y:none;background:#08090b}
+html[data-b9t9-route="app"] .app-shell{padding-bottom:76px}
+html[data-b9t9-route="app"] .app-bottom-nav{position:fixed;z-index:190;right:0;bottom:0;left:0;display:grid;grid-template-columns:repeat(5,1fr);gap:3px;padding:7px 8px max(7px,env(safe-area-inset-bottom));border-top:1px solid #2b3138;background:rgba(17,20,24,.97);box-shadow:0 -12px 35px rgba(0,0,0,.38);backdrop-filter:blur(18px)}
+.app-bottom-nav button{display:grid;justify-items:center;gap:4px;min-width:0;padding:6px 3px;border:0;border-radius:11px;background:transparent;color:#7f8992;font-size:9px;font-weight:800;cursor:pointer;transition:background .16s ease,color .16s ease}
+.app-bottom-nav button svg{width:20px;height:20px}.app-bottom-nav button.active{background:#1c3824;color:#9df1aa}.app-bottom-nav button:active{transform:scale(.97)}
+html[data-b9t9-route="app"] .floating-whatsapp{right:10px!important;bottom:84px!important}
+html[data-b9t9-route="app"] .floating-support-mobile{bottom:138px!important}
+html[data-b9t9-route="app"]:has(.game-layout.chat-open) .app-bottom-nav{display:none}
+@media(max-width:560px){html[data-b9t9-route="app"] .app-bottom-nav{padding-right:5px;padding-left:5px}.app-bottom-nav button{font-size:8px}.app-bottom-nav button svg{width:19px;height:19px}}
