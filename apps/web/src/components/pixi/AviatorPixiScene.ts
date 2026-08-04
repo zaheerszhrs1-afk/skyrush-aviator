@@ -285,14 +285,14 @@ export class AviatorPixiScene {
     multiplier: number = this.round.multiplier
   ): void {
     const elapsed = startedAt ? Math.max(0, now - startedAt) : 0;
-    // Bridge only the takeoff-to-first-advancing-tick gap from the same clock
-    // that moves the plane. Once the server multiplier rises above 1.00, the
-    // display immediately returns to authoritative values. This reuses the
-    // existing Pixi ticker and does not add React renders or another timer.
-    const takeoffMultiplier = startedAt && multiplier <= 1
+    // Use the same authoritative start clock as the server to bridge dropped
+    // volatile tick packets. The existing Pixi ticker keeps this smooth without
+    // adding React renders or another timer; the server still controls betting
+    // and the actual crash result.
+    const clockMultiplier = startedAt
       ? Math.exp(elapsed * MULTIPLIER_GROWTH_PER_MS)
       : multiplier;
-    const visualMultiplier = Number(Math.max(1, takeoffMultiplier).toFixed(2));
+    const visualMultiplier = Number(Math.max(1, multiplier, clockMultiplier).toFixed(2));
     const flightPoint = this.calculateFlightPoint(width, height, elapsed);
     const planeX =
       flightPoint.x +
