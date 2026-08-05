@@ -2290,3 +2290,120 @@ html[data-b9t9-route="app"]:has(.game-layout.chat-open) .app-bottom-nav{display:
 @media(max-width:1200px){.admin-content>header{align-items:flex-start}.admin-header-actions{align-items:flex-end;flex-wrap:wrap;justify-content:flex-end}.admin-header-finance{order:2;width:100%}.admin-header-finance>div{flex:1;min-width:0}.payment-method-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:800px){.referral-admin-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-referral-links-heading,.payment-methods-heading{align-items:stretch;flex-direction:column}.admin-referral-links-heading label{min-width:0}.payment-methods-heading>div:last-child{display:grid;grid-template-columns:1fr 1fr}.payment-method-form-grid,.payment-image-management{grid-template-columns:1fr}.payment-method-form-grid label.wide{grid-column:auto}.referral-basic-settings{grid-template-columns:1fr}}
 @media(max-width:600px){.admin-header-finance{display:grid;grid-template-columns:1fr}.admin-header-finance>div{min-width:0}.referral-admin-kpis{grid-template-columns:1fr}.payment-methods-heading>div:last-child{grid-template-columns:1fr}.payment-method-editor{padding:13px}.payment-method-editor>header{align-items:flex-start;flex-wrap:wrap}.payment-method-editor>header .danger{margin-left:0}.referral-url-cell{max-width:170px}}
+
+/* Game viewport fit: keep the complete betting area inside the visible screen. */
+:root {
+  --app-bottom-nav-space: 0px;
+}
+
+html[data-b9t9-route="app"] {
+  --app-bottom-nav-space: max(76px, calc(68px + env(safe-area-inset-bottom, 0px)));
+}
+
+@media (min-width: 901px) {
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .app-shell {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Header (72px) + game title row (45px). */
+  .game-layout {
+    height: calc(100vh - 117px - var(--app-bottom-nav-space));
+    height: calc(100dvh - 117px - var(--app-bottom-nav-space));
+    min-height: 0;
+    max-height: calc(100vh - 117px - var(--app-bottom-nav-space));
+    max-height: calc(100dvh - 117px - var(--app-bottom-nav-space));
+    overflow: hidden;
+    align-items: stretch;
+  }
+
+  /* The public website additionally has the 54px app-download banner. */
+  .website-shell:has(> .app-download-promo) .game-layout {
+    height: calc(100vh - 171px);
+    height: calc(100dvh - 171px);
+    max-height: calc(100vh - 171px);
+    max-height: calc(100dvh - 171px);
+  }
+
+  html[data-b9t9-route="app"] .app-shell {
+    padding-bottom: var(--app-bottom-nav-space);
+  }
+
+  .game-layout .bets-card,
+  .game-layout .center-column,
+  .game-layout .chat-panel {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .game-layout .center-column {
+    overflow: hidden;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  /* Mobile header is 64px and the title row is 42px. */
+  .game-layout {
+    min-height: calc(100vh - 106px - var(--app-bottom-nav-space));
+    min-height: calc(100dvh - 106px - var(--app-bottom-nav-space));
+  }
+
+  .website-shell:has(> .app-download-promo) .game-layout {
+    min-height: calc(100vh - 160px);
+    min-height: calc(100dvh - 160px);
+  }
+
+  html[data-b9t9-route="app"] .app-shell {
+    padding-bottom: var(--app-bottom-nav-space);
+  }
+
+  html[data-b9t9-route="app"] .game-layout {
+    padding-bottom: 8px;
+  }
+}
+
+@media (min-width: 901px) and (max-height: 640px) {
+  .center-column {
+    grid-template-rows: 32px minmax(0, 1fr) 158px;
+  }
+
+  .bet-panels {
+    height: 158px;
+  }
+
+  .bet-panel {
+    padding-top: 2px;
+    padding-bottom: 3px;
+  }
+
+  .segmented {
+    height: 29px;
+    margin-bottom: 4px;
+  }
+
+  .primary-bet {
+    min-height: 62px;
+  }
+
+  .auto-row {
+    margin-top: 4px;
+    padding-top: 3px;
+  }
+}

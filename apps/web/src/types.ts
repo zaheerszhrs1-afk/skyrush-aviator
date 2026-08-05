@@ -47,7 +47,9 @@ export interface RoundSnapshot {
   phase: RoundPhase;
   multiplier: number;
   phaseEndsAt: number | null;
+  nextRoundStartsAt: number | null;
   startedAt: number | null;
+  serverTime: number;
   crashPoint?: number;
   commit: string;
   history: RoundHistoryItem[];
@@ -70,7 +72,9 @@ export interface RoundTick {
   phase: RoundPhase;
   multiplier: number;
   phaseEndsAt: number | null;
+  nextRoundStartsAt: number | null;
   startedAt: number | null;
+  serverTime: number;
   crashPoint?: number;
 }
 

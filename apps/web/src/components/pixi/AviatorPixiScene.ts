@@ -2,10 +2,17 @@ import * as PIXI from "pixi.js";
 import type { RoundSnapshot } from "../../types";
 
 const CRASH_SCREEN_MS = 3000;
+const WAITING_SCREEN_MS = 8000;
+const NEXT_ROUND_TOTAL_MS = CRASH_SCREEN_MS + WAITING_SCREEN_MS;
+const PRELOAD_WINDOW_MS = 1200;
+const MULTIPLIER_GROWTH_PER_MS = 0.00006;
+const FLIGHT_CATCH_UP_RATE = 2.5;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const easeOutCubic = (value: number) => 1 - Math.pow(1 - value, 3);
 const easeInCubic = (value: number) => value * value * value;
+const flightElapsedFromMultiplier = (multiplier: number) =>
+  multiplier <= 1 ? 0 : Math.log(multiplier) / MULTIPLIER_GROWTH_PER_MS;
 
 type FlightPoint = {
   x: number;
@@ -23,7 +30,10 @@ export class AviatorPixiScene {
   private crashStartedAt = 0;
   private lastFlightPoint: FlightPoint = { x: 0, y: 0, progress: 0 };
   private elapsedAnimation = 0;
+  private visualFlightElapsed = 0;
   private rayRotation = 0;
+  private serverClockOffsetMs = 0;
+  private hasServerClockSample = false;
 
   private background: any;
   private rays: any;
@@ -45,6 +55,13 @@ export class AviatorPixiScene {
     this.host = host;
     this.round = initialRound;
     this.previousPhase = initialRound.phase;
+    if (initialRound.roundId !== "loading" && Number.isFinite(initialRound.serverTime)) {
+      this.serverClockOffsetMs = initialRound.serverTime - Date.now();
+      this.hasServerClockSample = true;
+    }
+    this.visualFlightElapsed = initialRound.phase === "RUNNING"
+      ? flightElapsedFromMultiplier(initialRound.multiplier)
+      : 0;
   }
 
   async init(): Promise<void> {
@@ -153,7 +170,37 @@ export class AviatorPixiScene {
   }
 
   setRound(round: RoundSnapshot): void {
-    if (round.phase !== this.previousPhase) {
+    const previousRound = this.round;
+    const roundChanged = round.roundId !== previousRound.roundId;
+    const phaseChanged = round.phase !== this.previousPhase;
+    if (Number.isFinite(round.serverTime)) {
+      const observedOffset = round.serverTime - Date.now();
+      // Keep the best (least network-delayed) clock sample so the countdown
+      // cannot jump backwards when one packet takes a slower route.
+      this.serverClockOffsetMs = this.hasServerClockSample
+        ? Math.max(this.serverClockOffsetMs, observedOffset)
+        : observedOffset;
+      this.hasServerClockSample = true;
+    }
+
+    if (round.phase === "WAITING") {
+      this.visualFlightElapsed = 0;
+    } else if (round.phase === "RUNNING") {
+      const targetElapsed = flightElapsedFromMultiplier(round.multiplier);
+      const isFreshTakeoff = !roundChanged && previousRound.phase === "WAITING";
+
+      if (isFreshTakeoff) {
+        // Begin at the launch position. The plane must not run ahead while the
+        // displayed authoritative multiplier is still 1.00x.
+        this.visualFlightElapsed = 0;
+      } else if (roundChanged || this.visualFlightElapsed > targetElapsed) {
+        // Reconnects or corrected packets should snap to the authoritative
+        // position instead of replaying an old flight.
+        this.visualFlightElapsed = targetElapsed;
+      }
+    }
+
+    if (phaseChanged) {
       if (round.phase === "CRASHED") {
         this.crashStartedAt = performance.now();
       }
@@ -192,6 +239,18 @@ export class AviatorPixiScene {
     this.elapsedAnimation += deltaMS;
 
     if (this.round.phase === "RUNNING") {
+      const targetElapsed = flightElapsedFromMultiplier(this.round.multiplier);
+      if (this.visualFlightElapsed > targetElapsed) {
+        this.visualFlightElapsed = targetElapsed;
+      } else {
+        // Smoothly catch up to each authoritative server step, but never move
+        // beyond it. The multiplier and plane therefore begin together and
+        // neither can get ahead of the final crash result.
+        this.visualFlightElapsed = Math.min(
+          targetElapsed,
+          this.visualFlightElapsed + deltaMS * FLIGHT_CATCH_UP_RATE
+        );
+      }
       this.rayRotation = (this.rayRotation + deltaMS * 0.00009) % (Math.PI * 2);
     } else if (this.round.phase === "CRASHED") {
       this.rayRotation = (this.rayRotation + deltaMS * 0.000045) % (Math.PI * 2);
@@ -211,18 +270,13 @@ export class AviatorPixiScene {
     if (!this.app) return;
     const width = this.app.screen.width;
     const height = this.app.screen.height;
-    const now = Date.now();
+    const now = this.getServerNow();
     const phase = this.round.phase;
 
     if (phase === "WAITING") {
-      // Start a visual-only takeoff exactly when the authoritative countdown
-      // deadline is reached. Betting state remains server-controlled, while
-      // the graph no longer freezes on 0 during the network trip of the first
-      // RUNNING packet.
-      if (this.round.phaseEndsAt && now >= this.round.phaseEndsAt) {
-        this.renderRunning(width, height, now, this.round.phaseEndsAt, 1);
-        return;
-      }
+      // Keep the countdown/preloaded 1.00x frame visible until the reliable
+      // round:started packet arrives. The client no longer guesses takeoff from
+      // its own clock, so there is no plane-first or multiplier-first frame.
       this.renderWaiting(width, height, now);
       return;
     }
@@ -232,46 +286,62 @@ export class AviatorPixiScene {
       return;
     }
 
-    this.renderRunning(width, height, now);
+    this.renderRunning(width, height);
   }
 
   private renderWaiting(width: number, height: number, now: number): void {
     const remaining = this.round.phaseEndsAt ? Math.max(0, this.round.phaseEndsAt - now) : 0;
-    const seconds = Math.max(0, Math.ceil(remaining / 1000));
-    const progress = clamp(1 - remaining / 8000, 0, 1);
+    const preload = remaining <= PRELOAD_WINDOW_MS;
+    const waitingProgress = clamp(1 - remaining / WAITING_SCREEN_MS, 0, 1);
 
-    this.glow.alpha = 0.12;
+    this.glow.alpha = preload ? 0.24 : 0.12;
     this.curveFill.clear();
     this.curveLine.clear();
     this.curveHighlight.clear();
     this.plane.visible = true;
-    this.plane.alpha = 0.78;
-    const idleX = Math.max(76, width * 0.08) + Math.sin(this.elapsedAnimation / 900) * Math.max(1.5, width * 0.0018);
-    const idleY = height - Math.max(24, height * 0.04) + Math.sin(this.elapsedAnimation / 430) * Math.max(1.5, height * 0.004);
-    const idleScale = 0.82 + Math.sin(this.elapsedAnimation / 700) * 0.006;
+    this.plane.alpha = preload ? 1 : 0.78;
+
+    const launchPoint = this.calculateFlightPoint(width, height, 0);
+    const idleX = launchPoint.x + Math.sin(this.elapsedAnimation / 900) * Math.max(1.2, width * 0.0015);
+    const idleY = launchPoint.y + Math.sin(this.elapsedAnimation / 430) * Math.max(1.2, height * 0.003);
+    const idleScale = preload ? 1 : 0.92 + Math.sin(this.elapsedAnimation / 700) * 0.006;
     this.plane.position.set(idleX, idleY);
     this.plane.rotation =
       -0.03 +
-      Math.sin(this.elapsedAnimation / 600) * 0.015 +
-      Math.sin(this.elapsedAnimation / 240) * 0.004;
+      Math.sin(this.elapsedAnimation / 600) * 0.012 +
+      Math.sin(this.elapsedAnimation / 240) * 0.003;
     this.plane.scale.set(this.getPlaneScale(width, height) * idleScale);
-    this.spinPropeller(1.3);
+    this.spinPropeller(preload ? 2.2 : 1.3);
 
     this.statusText.visible = false;
-    this.multiplierText.visible = false;
     this.waitingText.visible = true;
-    this.waitingText.text = `NEXT ROUND IN ${seconds}s`;
-    this.waitingText.position.set(width * 0.5, height * 0.46);
-    this.waitingText.style.fontSize = clamp(height * 0.055, 18, 27);
+    this.waitingText.position.set(width * 0.5, preload ? height * 0.63 : height * 0.46);
+    this.waitingText.style.fontSize = clamp(height * 0.052, 17, 25);
+
+    if (preload) {
+      // Preload the multiplier before takeoff. At zero we show STARTING... until
+      // the server confirms RUNNING, rather than letting the plane move alone.
+      this.multiplierText.visible = true;
+      this.multiplierText.text = "1.00x";
+      this.multiplierText.style.fill = 0xffffff;
+      this.multiplierText.position.set(width * 0.51, height * 0.44);
+      this.multiplierText.alpha = 1;
+      this.waitingText.text = remaining > 0
+        ? `STARTING IN ${(remaining / 1000).toFixed(1)}s`
+        : "STARTING...";
+    } else {
+      this.multiplierText.visible = false;
+      this.waitingText.text = `NEXT ROUND IN ${Math.max(1, Math.ceil(remaining / 1000))}s`;
+    }
 
     const barWidth = clamp(width * 0.34, 180, 420);
     const barHeight = 8;
     const barX = (width - barWidth) / 2;
-    const barY = height * 0.54;
+    const barY = preload ? height * 0.69 : height * 0.54;
     this.waitingBar.visible = true;
     this.waitingBar.clear();
     this.waitingBar.roundRect(barX, barY, barWidth, barHeight, barHeight / 2).fill({ color: 0x26282c, alpha: 1 });
-    this.waitingBar.roundRect(barX, barY, barWidth * progress, barHeight, barHeight / 2).fill({ color: 0xff0048, alpha: 1 });
+    this.waitingBar.roundRect(barX, barY, barWidth * waitingProgress, barHeight, barHeight / 2).fill({ color: 0xff0048, alpha: 1 });
 
     this.audience.visible = true;
   }
@@ -279,32 +349,36 @@ export class AviatorPixiScene {
   private renderRunning(
     width: number,
     height: number,
-    now: number,
-    startedAt: number | null = this.round.startedAt,
     multiplier: number = this.round.multiplier
   ): void {
-    const elapsed = startedAt ? Math.max(0, now - startedAt) : 0;
+    // Plane position is derived from the same latest authoritative multiplier
+    // shown on screen. It stays at takeoff while the value is 1.00x and starts
+    // moving on the exact frame the displayed multiplier begins increasing.
+    const elapsed = multiplier <= 1 ? 0 : this.visualFlightElapsed;
     // The multiplier text must remain authoritative. Extrapolating it from the
     // client clock can run ahead of the server because of clock skew or a
     // delayed crash packet, making the live value higher than the final result.
-    // Keep the plane animation time-based, but render only the latest server
-    // multiplier so the live and FLEW AWAY values can never contradict.
+    // Render only the latest server multiplier so the live and FLEW AWAY
+    // values can never contradict. Plane travel uses the same authoritative
+    // progression rather than an independent client clock.
     const visualMultiplier = Number(Math.max(1, multiplier).toFixed(2));
+    const inFlight = visualMultiplier > 1;
+    const motionFactor = inFlight ? 1 : 0;
     const flightPoint = this.calculateFlightPoint(width, height, elapsed);
     const planeX =
       flightPoint.x +
-      Math.sin(this.elapsedAnimation / 680) * Math.max(1.25, width * 0.0018);
+      Math.sin(this.elapsedAnimation / 680) * Math.max(1.25, width * 0.0018) * motionFactor;
     const planeY =
       flightPoint.y +
-      Math.sin(this.elapsedAnimation / 210) * Math.max(2, height * 0.007) +
-      Math.sin(this.elapsedAnimation / 73) * Math.max(0.35, height * 0.0013);
+      (Math.sin(this.elapsedAnimation / 210) * Math.max(2, height * 0.007) +
+        Math.sin(this.elapsedAnimation / 73) * Math.max(0.35, height * 0.0013)) * motionFactor;
     const planeRotation =
       -0.055 +
       flightPoint.progress * -0.04 +
-      Math.sin(this.elapsedAnimation / 420) * 0.016 +
-      Math.sin(this.elapsedAnimation / 145) * 0.0035;
+      (Math.sin(this.elapsedAnimation / 420) * 0.016 +
+        Math.sin(this.elapsedAnimation / 145) * 0.0035) * motionFactor;
     const planeScale = this.getPlaneScale(width, height);
-    const animatedPlaneScale = planeScale * (1 + Math.sin(this.elapsedAnimation / 520) * 0.006);
+    const animatedPlaneScale = planeScale * (1 + Math.sin(this.elapsedAnimation / 520) * 0.006 * motionFactor);
     const tailPoint = this.calculatePlaneTailPoint(
       planeX,
       planeY,
@@ -364,8 +438,26 @@ export class AviatorPixiScene {
       this.plane.visible = false;
     }
 
-    this.waitingText.visible = false;
-    this.waitingBar.visible = false;
+    const nextRoundRemaining = this.round.nextRoundStartsAt
+      ? Math.max(0, this.round.nextRoundStartsAt - this.getServerNow())
+      : null;
+
+    this.waitingText.visible = nextRoundRemaining !== null;
+    this.waitingBar.visible = nextRoundRemaining !== null;
+    if (nextRoundRemaining !== null) {
+      this.waitingText.text = `NEXT ROUND IN ${Math.max(1, Math.ceil(nextRoundRemaining / 1000))}s`;
+      this.waitingText.position.set(width * 0.5, height * 0.69);
+      this.waitingText.style.fontSize = clamp(height * 0.047, 16, 23);
+
+      const countdownProgress = clamp(1 - nextRoundRemaining / NEXT_ROUND_TOTAL_MS, 0, 1);
+      const barWidth = clamp(width * 0.30, 170, 360);
+      const barHeight = 7;
+      const barX = (width - barWidth) / 2;
+      const barY = height * 0.74;
+      this.waitingBar.clear();
+      this.waitingBar.roundRect(barX, barY, barWidth, barHeight, barHeight / 2).fill({ color: 0x26282c, alpha: 1 });
+      this.waitingBar.roundRect(barX, barY, barWidth * countdownProgress, barHeight, barHeight / 2).fill({ color: 0xff0048, alpha: 1 });
+    }
     this.statusText.visible = true;
     this.statusText.text = "FLEW AWAY!";
     this.statusText.style.fontSize = clamp(height * 0.085, 28, 48);
@@ -487,12 +579,18 @@ export class AviatorPixiScene {
   }
 
   private calculateFlightPoint(width: number, height: number, elapsed: number): FlightPoint {
+    // Keep the launch sprite fully visible while elapsed is zero. This is the
+    // same takeoff point used by the preloaded 1.00x frame and the RUNNING frame.
     const progress = clamp(Math.pow(Math.max(elapsed, 50) / 9000, 0.6), 0.026, 0.94);
     const startX = Math.max(26, width * 0.025);
     const baseY = height - Math.max(2, height * 0.008);
     const x = startX + progress * width * 0.83;
     const y = baseY - Math.pow(progress, 1.88) * height * 0.72;
     return { x, y, progress };
+  }
+
+  private getServerNow(): number {
+    return Date.now() + this.serverClockOffsetMs;
   }
 
   private layoutText(width: number, height: number): void {

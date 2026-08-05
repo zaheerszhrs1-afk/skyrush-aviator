@@ -169,6 +169,7 @@ export class GameEngine {
   private multiplier = 1;
   private startedAt: number | null = null;
   private phaseEndsAt: number | null = Date.now() + WAITING_MS;
+  private nextRoundStartsAt: number | null = this.phaseEndsAt;
   private history: RoundHistoryItem[] = [];
   private bets: PublicBet[] = [];
   private activeBets = new Map<string, Partial<Record<BetSlot, PublicBet>>>();
@@ -233,7 +234,9 @@ export class GameEngine {
       phase: this.phase,
       multiplier: this.multiplier,
       phaseEndsAt: this.phaseEndsAt,
+      nextRoundStartsAt: this.nextRoundStartsAt,
       startedAt: this.startedAt,
+      serverTime: Date.now(),
       crashPoint: this.phase === "CRASHED" ? this.crashPoint : undefined,
       commit: this.commit,
       history: this.history,
@@ -256,7 +259,9 @@ export class GameEngine {
       phase: this.phase,
       multiplier: this.multiplier,
       phaseEndsAt: this.phaseEndsAt,
+      nextRoundStartsAt: this.nextRoundStartsAt,
       startedAt: this.startedAt,
+      serverTime: Date.now(),
       crashPoint: this.phase === "CRASHED" ? this.crashPoint : undefined
     };
   }
@@ -799,6 +804,7 @@ export class GameEngine {
         this.phase = "RUNNING";
         this.startedAt = scheduledStartAt;
         this.phaseEndsAt = null;
+        this.nextRoundStartsAt = null;
         this.multiplier = 1;
 
         // Send the first running frame reliably. Normal 50 ms frames remain
@@ -848,6 +854,7 @@ export class GameEngine {
         this.bots.settleLosses();
         this.roundSettled = true;
         this.phaseEndsAt = Date.now() + CRASHED_MS;
+        this.nextRoundStartsAt = this.phaseEndsAt + WAITING_MS;
         this.history = [{
           roundId: this.roundId,
           crashPoint: this.multiplier,
@@ -883,6 +890,10 @@ export class GameEngine {
   }
 
   private async prepareRound(): Promise<void> {
+    // Preserve the start deadline announced during the crash screen. This lets
+    // clients display one continuous next-round countdown while the server
+    // prepares the next seed, settings and queued bets.
+    const announcedStartAt = this.nextRoundStartsAt;
     this.settings = await this.loadSettings();
     this.phase = "WAITING";
     this.roundId = crypto.randomUUID();
@@ -905,7 +916,11 @@ export class GameEngine {
       : availablePoolMinor < pendingLiabilityMinor ? 1.00 : naturalCrash;
     this.multiplier = 1;
     this.startedAt = null;
-    this.phaseEndsAt = Date.now() + WAITING_MS;
+    this.phaseEndsAt = Math.max(
+      Date.now() + 1_500,
+      announcedStartAt ?? Date.now() + WAITING_MS
+    );
+    this.nextRoundStartsAt = this.phaseEndsAt;
     this.bets = [];
     this.activeBets.clear();
     this.roundSettled = false;

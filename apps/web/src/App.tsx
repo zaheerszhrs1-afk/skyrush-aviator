@@ -22,7 +22,7 @@ import { socket } from "./lib/socket";
 import type { AccountMode, AuthUser, BonusSection, ChatItem, RoundSnapshot, WalletSnapshot } from "./types";
 import "./styles.css";
 
-const emptyRound: RoundSnapshot = { roundId: "loading", phase: "WAITING", multiplier: 1, phaseEndsAt: Date.now() + 8000, startedAt: null, commit: "", history: [], bets: [], demoBets: [], online: 0, automatedOnline: 75, demoOnline: 0, houseEdgePercent: 1, lossPool: 0, commissionPercent: 10, activeBetEscrow: 0, reservedRewardLiquidity: 0, availableRewardLiquidity: 0, testMode: false };
+const emptyRound: RoundSnapshot = { roundId: "loading", phase: "WAITING", multiplier: 1, phaseEndsAt: Date.now() + 8000, nextRoundStartsAt: Date.now() + 8000, startedAt: null, serverTime: Date.now(), commit: "", history: [], bets: [], demoBets: [], online: 0, automatedOnline: 75, demoOnline: 0, houseEdgePercent: 1, lossPool: 0, commissionPercent: 10, activeBetEscrow: 0, reservedRewardLiquidity: 0, availableRewardLiquidity: 0, testMode: false };
 const emptyWallet: WalletSnapshot = { balance: 0, lockedBalance: 0, bettingLockedBalance: 0, pendingRewards: 0, wagerRequirementRemaining: 0, wagerRequirementTarget: 0, wagerRequirementCompleted: 0, totalBalance: 0, activeBets: {}, queuedBets: {}, demoBalance: 0, demoActiveBets: {} };
 const adminPath = () => window.location.pathname.startsWith("/admin");
 
