@@ -2,7 +2,7 @@ export type RoundPhase = "WAITING" | "RUNNING" | "CRASHED";
 export type BetSlot = "left" | "right";
 export type AccountMode = "REAL" | "DEMO";
 export type UserRole = "USER" | "ADMIN" | "SUB_ADMIN";
-export type AdminPermission = "OVERVIEW" | "BETS" | "BONUSES" | "USERS" | "DEPOSITS" | "WITHDRAWALS" | "AUDIT" | "SETTINGS" | "SUPPORT" | "CONTENT" | "TEAM" | "REPORTS" | "FAQS" | "NOTIFICATIONS" | "GAME_CONTROL";
+export type AdminPermission = "OVERVIEW" | "BETS" | "BONUSES" | "REFERRALS" | "PAYMENT_METHODS" | "USERS" | "DEPOSITS" | "WITHDRAWALS" | "AUDIT" | "SETTINGS" | "SUPPORT" | "CONTENT" | "TEAM" | "REPORTS" | "FAQS" | "NOTIFICATIONS" | "GAME_CONTROL";
 export type AuthProvider = "PASSWORD" | "GOOGLE" | "HYBRID";
 
 export interface PublicBet {

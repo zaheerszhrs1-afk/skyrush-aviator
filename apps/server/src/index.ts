@@ -17,7 +17,8 @@ import { connectDatabase, disconnectDatabase } from "./database.js";
 import { createDepositRequest, createNowPaymentsDepositRequest, createWithdrawalRequest, reviewDeposit, reviewWithdrawal, settleNowPaymentsDeposit } from "./finance.js";
 import { createNowPayment, nowPaymentsPublicConfig, verifyNowPaymentsIpn } from "./nowpayments.js";
 import { uploadPaymentReceipt } from "./cloudinary.js";
-import { createReferralCode, getReferralDashboard } from "./referral.js";
+import { normalizePaymentMethods } from "./payment-methods.js";
+import { createReferralCode, getAdminReferralDashboard, getReferralDashboard } from "./referral.js";
 import {
   adminBonusSummary,
   claimLevelUpBonus,
@@ -340,6 +341,11 @@ app.get("/api/rounds/:roundId/proof", requireAuth, asyncRoute(async (request: Au
   });
 }));
 
+app.get("/api/payment-methods", requireAuth, asyncRoute(async (_request, response) => {
+  const settings = await PlatformSettingsModel.findOne({ key: "global" }).select("paymentMethods").lean();
+  response.json({ ok: true, methods: normalizePaymentMethods((settings as any)?.paymentMethods) });
+}));
+
 app.get("/api/finance/settings", requireAuth, asyncRoute(async (_request, response) => {
   const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
   response.json({
@@ -548,6 +554,20 @@ app.post("/api/bonuses/monthly/claim", requireAuth, asyncRoute(async (request: A
   const result = await claimMonthlyBonus(request.authUser!.id);
   await engine.emitWalletForUser(request.authUser!.id);
   response.json({ ok: true, ...result, dashboard: await getBonusDashboard(request.authUser!.id) });
+}));
+
+app.get("/api/admin/header-stats", requireAdmin, asyncRoute(async (_request, response) => {
+  const state = await PlatformStateModel.findOne({ key: "global" }).lean();
+  const completedDeposits = fromMinor((state as any)?.totalApprovedDepositsMinor ?? 0);
+  const completedWithdrawals = fromMinor((state as any)?.totalCompletedWithdrawalsMinor ?? 0);
+  response.json({
+    ok: true,
+    stats: {
+      adminRemaining: completedDeposits - completedWithdrawals,
+      completedDeposits,
+      completedWithdrawals
+    }
+  });
 }));
 
 app.get("/api/admin/summary", requireAdmin, asyncRoute(async (_request, response) => {
@@ -966,6 +986,30 @@ app.get("/api/admin/audit", requireAdmin, asyncRoute(async (request, response) =
   });
 }));
 
+app.get("/api/admin/referrals", requireAdmin, asyncRoute(async (_request, response) => {
+  response.json({ ok: true, ...(await getAdminReferralDashboard()) });
+}));
+
+app.patch("/api/admin/referrals/settings", requireAdmin, asyncRoute(async (request: AuthenticatedRequest, response) => {
+  const referralInvitationRules = normalizeReferralInvitationRules(request.body?.referralInvitationRules);
+  const referralCommissionRates = normalizeReferralCommissionRates(request.body?.referralCommissionRates);
+  const referralMinDeposit = Math.max(1, Number.isFinite(numberInput(request.body?.referralMinDeposit)) ? numberInput(request.body?.referralMinDeposit) : 300);
+  const referralDepositPercent = Math.min(100, Math.max(0, Number.isFinite(numberInput(request.body?.referralDepositPercent)) ? numberInput(request.body?.referralDepositPercent) : 5));
+  await PlatformSettingsModel.findOneAndUpdate(
+    { key: "global" },
+    { $set: {
+      referralEnabled: request.body?.referralEnabled !== false,
+      referralMinDeposit,
+      referralDepositPercent,
+      referralInvitationRules,
+      referralCommissionRates,
+      updatedBy: request.authUser!.id
+    } },
+    { new: true, upsert: true }
+  );
+  response.json({ ok: true, ...(await getAdminReferralDashboard()) });
+}));
+
 app.get("/api/admin/bonuses", requireAdmin, asyncRoute(async (_request, response) => {
   response.json({ ok: true, ...(await adminBonusSummary()) });
 }));
@@ -973,8 +1017,6 @@ app.get("/api/admin/bonuses", requireAdmin, asyncRoute(async (_request, response
 app.patch("/api/admin/bonuses/settings", requireAdmin, asyncRoute(async (request: AuthenticatedRequest, response) => {
   const vipLevels = normalizeVipLevels(request.body?.vipLevels);
   const monthlyBonusRules = normalizeMonthlyBonusRules(request.body?.monthlyBonusRules);
-  const referralInvitationRules = normalizeReferralInvitationRules(request.body?.referralInvitationRules);
-  const referralCommissionRates = normalizeReferralCommissionRates(request.body?.referralCommissionRates);
   const monthlyClaimStartDay = Math.min(28, Math.max(1, Math.floor(numberInput(request.body?.monthlyClaimStartDay))));
   const monthlyClaimWindowHours = Math.min(744, Math.max(1, Math.floor(numberInput(request.body?.monthlyClaimWindowHours))));
   if (![monthlyClaimStartDay, monthlyClaimWindowHours].every(Number.isFinite)) {
@@ -988,11 +1030,6 @@ app.patch("/api/admin/bonuses/settings", requireAdmin, asyncRoute(async (request
       vipLevelBonusEnabled: request.body?.vipLevelBonusEnabled !== false,
       vipMonthlyBonusEnabled: request.body?.vipMonthlyBonusEnabled !== false,
       vipWithdrawalLimitsEnabled: request.body?.vipWithdrawalLimitsEnabled !== false,
-      referralEnabled: request.body?.referralEnabled !== false,
-      referralMinDeposit: Math.max(1, Number.isFinite(numberInput(request.body?.referralMinDeposit)) ? numberInput(request.body?.referralMinDeposit) : 300),
-      referralDepositPercent: Math.min(100, Math.max(0, Number.isFinite(numberInput(request.body?.referralDepositPercent)) ? numberInput(request.body?.referralDepositPercent) : 5)),
-      referralInvitationRules,
-      referralCommissionRates,
       vipTimezone: cleanText(request.body?.vipTimezone || "Asia/Karachi", 80),
       monthlyClaimStartDay,
       monthlyClaimWindowHours,
@@ -1022,6 +1059,27 @@ app.patch("/api/admin/bonuses/settings", requireAdmin, asyncRoute(async (request
 app.post("/api/admin/bonuses/fund", requireAdmin, asyncRoute(async (request: AuthenticatedRequest, response) => {
   const result = await fundBonusWallet(request.authUser!.id, numberInput(request.body?.amount));
   response.json({ ok: true, ...result });
+}));
+
+app.get("/api/admin/payment-methods", requireAdmin, asyncRoute(async (_request, response) => {
+  const settings = await PlatformSettingsModel.findOne({ key: "global" }).select("paymentMethods").lean();
+  response.json({ ok: true, methods: normalizePaymentMethods((settings as any)?.paymentMethods) });
+}));
+
+app.patch("/api/admin/payment-methods", requireAdmin, asyncRoute(async (request: AuthenticatedRequest, response) => {
+  const methods = normalizePaymentMethods(request.body?.methods);
+  await PlatformSettingsModel.findOneAndUpdate(
+    { key: "global" },
+    { $set: { paymentMethods: methods, updatedBy: request.authUser!.id } },
+    { new: true, upsert: true }
+  );
+  response.json({ ok: true, methods });
+}));
+
+app.post("/api/admin/payment-methods/upload", requireAdmin, asyncRoute(async (request, response) => {
+  const fileDataUrl = cleanText(request.body?.fileDataUrl, 7_000_000);
+  const image = await uploadPaymentReceipt(fileDataUrl);
+  response.status(201).json({ ok: true, imageUrl: image.secureUrl, publicId: image.publicId });
 }));
 
 app.get("/api/admin/settings", requireAdmin, asyncRoute(async (_request, response) => {

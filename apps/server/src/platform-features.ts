@@ -50,7 +50,7 @@ const asyncRoute = (handler: (request: any, response: Response, next: NextFuncti
   (request: Request, response: Response, next: NextFunction) => void handler(request, response, next).catch(next);
 
 const ALL_PERMISSIONS: AdminPermission[] = [
-  "OVERVIEW", "BETS", "BONUSES", "USERS", "DEPOSITS", "WITHDRAWALS", "AUDIT", "SETTINGS",
+  "OVERVIEW", "BETS", "BONUSES", "REFERRALS", "PAYMENT_METHODS", "USERS", "DEPOSITS", "WITHDRAWALS", "AUDIT", "SETTINGS",
   "SUPPORT", "CONTENT", "TEAM", "REPORTS", "FAQS", "NOTIFICATIONS", "GAME_CONTROL"
 ];
 

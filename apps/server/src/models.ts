@@ -5,6 +5,8 @@ export type AdminPermission =
   | "OVERVIEW"
   | "BETS"
   | "BONUSES"
+  | "REFERRALS"
+  | "PAYMENT_METHODS"
   | "USERS"
   | "DEPOSITS"
   | "WITHDRAWALS"
@@ -249,6 +251,25 @@ const referralCommissionRateSchema = new Schema(
   { _id: false, versionKey: false }
 );
 
+
+const paymentMethodSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true, maxlength: 48 },
+    code: { type: String, required: true, trim: true, maxlength: 80 },
+    title: { type: String, required: true, trim: true, maxlength: 80 },
+    logoUrl: { type: String, default: "", trim: true, maxlength: 1000 },
+    qrImageUrl: { type: String, default: "", trim: true, maxlength: 1000 },
+    identifierLabel: { type: String, default: "ACCOUNT ID", trim: true, maxlength: 80 },
+    identifierValue: { type: String, default: "", trim: true, maxlength: 160 },
+    instructions: { type: String, default: "", trim: true, maxlength: 500 },
+    depositEnabled: { type: Boolean, default: true },
+    withdrawalEnabled: { type: Boolean, default: true },
+    receiptRequired: { type: Boolean, default: true },
+    sortOrder: { type: Number, default: 0 }
+  },
+  { _id: false, versionKey: false }
+);
+
 const platformSettingsSchema = new Schema(
   {
     key: { type: String, default: "global", unique: true },
@@ -264,6 +285,7 @@ const platformSettingsSchema = new Schema(
     maxCashoutMultiplier: { type: Number, default: 10, min: 1.01, max: 1000 },
     depositsEnabled: { type: Boolean, default: true },
     withdrawalsEnabled: { type: Boolean, default: true },
+    paymentMethods: { type: [paymentMethodSchema], default: [] },
     vipEnabled: { type: Boolean, default: true },
     vipLevelBonusEnabled: { type: Boolean, default: true },
     vipMonthlyBonusEnabled: { type: Boolean, default: true },

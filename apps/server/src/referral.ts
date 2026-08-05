@@ -215,3 +215,100 @@ export async function getReferralDashboard(userId: string): Promise<any> {
     recentRewards: claims.slice(0, 20).map((item: any) => ({ id: String(item._id), type: item.type, amount: Number(item.amount ?? fromMinor(item.amountMinor ?? 0)), level: Number(item.referralLevel ?? 0), createdAt: item.createdAt }))
   };
 }
+
+export async function getAdminReferralDashboard(): Promise<any> {
+  const settings = await PlatformSettingsModel.findOne({ key: "global" }).lean();
+  const config = vipConfigFromSettings(settings);
+  const referrers = await UserModel.find({ role: "USER", referralCode: { $exists: true, $ne: "" } })
+    .select("name email phone status referralCode createdAt")
+    .sort({ createdAt: -1 })
+    .limit(5000)
+    .lean();
+  const referrerIds = referrers.map((item: any) => item._id);
+  const members = referrerIds.length > 0
+    ? await UserModel.find({ role: "USER", referredBy: { $in: referrerIds } })
+      .select("name email phone status referredBy createdAt")
+      .sort({ createdAt: -1 })
+      .lean()
+    : [];
+  const validInviteRows = referrerIds.length > 0 ? await DepositRequestModel.aggregate([
+    { $match: { status: "APPROVED", amountMinor: { $gte: toMinor(config.referralMinDeposit) } } },
+    { $group: { _id: "$userId" } },
+    { $lookup: { from: "users", localField: "_id", foreignField: "_id", as: "user" } },
+    { $unwind: "$user" },
+    { $match: { "user.referredBy": { $in: referrerIds } } },
+    { $group: { _id: "$user.referredBy", count: { $sum: 1 } } }
+  ]) : [];
+  const rewardRows = referrerIds.length > 0 ? await BonusClaimModel.aggregate([
+    { $match: { userId: { $in: referrerIds }, type: { $in: ["REFERRAL_INVITATION", "REFERRAL_DEPOSIT", "REFERRAL_BET"] } } },
+    { $group: { _id: "$userId", amountMinor: { $sum: { $ifNull: ["$amountMinor", 0] } }, count: { $sum: 1 } } }
+  ]) : [];
+  const recentClaims = await BonusClaimModel.find({ type: { $in: ["REFERRAL_INVITATION", "REFERRAL_DEPOSIT", "REFERRAL_BET"] } })
+    .populate("userId", "name email referralCode")
+    .populate("referredUserId", "name email")
+    .sort({ createdAt: -1 })
+    .limit(200)
+    .lean();
+
+  const membersByReferrer = new Map<string, any[]>();
+  for (const member of members as any[]) {
+    const key = String(member.referredBy ?? "");
+    if (!membersByReferrer.has(key)) membersByReferrer.set(key, []);
+    membersByReferrer.get(key)!.push({
+      id: String(member._id),
+      name: String(member.name ?? "Player"),
+      email: String(member.email ?? ""),
+      phone: String(member.phone ?? ""),
+      status: String(member.status ?? "ACTIVE"),
+      joinedAt: member.createdAt
+    });
+  }
+  const validByReferrer = new Map<string, number>(validInviteRows.map((item: any) => [String(item._id), Number(item.count ?? 0)]));
+  const rewardsByReferrer = new Map<string, { amount: number; count: number }>(rewardRows.map((item: any) => [String(item._id), { amount: fromMinor(item.amountMinor ?? 0), count: Number(item.count ?? 0) }]));
+  const rows = referrers.map((item: any) => {
+    const id = String(item._id);
+    const linkedMembers = membersByReferrer.get(id) ?? [];
+    const rewards = rewardsByReferrer.get(id) ?? { amount: 0, count: 0 };
+    return {
+      userId: id,
+      name: String(item.name ?? "Player"),
+      email: String(item.email ?? ""),
+      phone: String(item.phone ?? ""),
+      status: String(item.status ?? "ACTIVE"),
+      code: String(item.referralCode ?? ""),
+      inviteUrl: `${publicAppBaseUrl()}/refer/${String(item.referralCode ?? "")}`,
+      usersCount: linkedMembers.length,
+      validUsersCount: Number(validByReferrer.get(id) ?? 0),
+      rewardsPaid: rewards.amount,
+      rewardCount: rewards.count,
+      members: linkedMembers.slice(0, 100),
+      createdAt: item.createdAt
+    };
+  }).sort((left: any, right: any) => right.usersCount - left.usersCount || right.rewardsPaid - left.rewardsPaid);
+
+  return {
+    config: {
+      referralEnabled: config.referralEnabled,
+      referralMinDeposit: config.referralMinDeposit,
+      referralDepositPercent: config.referralDepositPercent,
+      referralInvitationRules: config.referralInvitationRules,
+      referralCommissionRates: config.referralCommissionRates
+    },
+    totals: {
+      referralLinks: rows.length,
+      linkedUsers: members.length,
+      validUsers: validInviteRows.reduce((sum: number, item: any) => sum + Number(item.count ?? 0), 0),
+      rewardsPaid: rewardRows.reduce((sum: number, item: any) => sum + fromMinor(item.amountMinor ?? 0), 0)
+    },
+    referrers: rows,
+    claims: recentClaims.map((item: any) => ({
+      id: String(item._id),
+      userId: item.userId,
+      referredUserId: item.referredUserId,
+      type: item.type,
+      amount: Number(item.amount ?? fromMinor(item.amountMinor ?? 0)),
+      referralLevel: Number(item.referralLevel ?? 0),
+      createdAt: item.createdAt
+    }))
+  };
+}

@@ -194,6 +194,8 @@ export function requireAuth(request: AuthenticatedRequest, response: Response, n
 
 const permissionForPath = (path: string): AdminPermission => {
   if (path.includes("/bets")) return "BETS";
+  if (path.includes("/referrals")) return "REFERRALS";
+  if (path.includes("/payment-methods")) return "PAYMENT_METHODS";
   if (path.includes("/bonuses")) return "BONUSES";
   if (path.includes("/users")) return "USERS";
   if (path.includes("/deposits")) return "DEPOSITS";

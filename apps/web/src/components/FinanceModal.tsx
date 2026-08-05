@@ -14,6 +14,21 @@ interface NowPaymentsConfig {
   currencies: string[];
 }
 
+interface PaymentMethodConfig {
+  id: string;
+  code: string;
+  title: string;
+  logoUrl: string;
+  qrImageUrl: string;
+  identifierLabel: string;
+  identifierValue: string;
+  instructions: string;
+  depositEnabled: boolean;
+  withdrawalEnabled: boolean;
+  receiptRequired: boolean;
+  sortOrder: number;
+}
+
 interface NowPaymentInstructions {
   depositId: string;
   paymentId: string;
@@ -27,23 +42,13 @@ interface NowPaymentInstructions {
 }
 
 const NOWPAYMENTS_METHOD = "NOWPayments Crypto";
-const JAZZCASH_TILL_ID = "984046332";
-const EASYPAISA_RAAST_ID = import.meta.env.VITE_EASYPAISA_RAAST_ID?.trim() || JAZZCASH_TILL_ID;
-const depositMethods = [
-  { value: "JazzCash", label: "Jazzcash", icon: "JC", logo: "/payment-logos/jazzcash.png" },
-  { value: "EasyPaisa", label: "Easypaisa", icon: "EP", logo: "/payment-logos/easypaisa.png" }
-];
-const withdrawalMethods = [
-  { value: "EasyPaisa", label: "Easypaisa", icon: "EP", logo: "/payment-logos/easypaisa.png" },
-  { value: "JazzCash", label: "Jazzcash", icon: "JC", logo: "/payment-logos/jazzcash.png" }
-];
 const depositQuickAmounts = [300, 500, 1_000, 3_000, 5_000, 10_000, 30_000, 50_000];
 
 export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "DEPOSIT" }: FinanceModalProps) {
   const [tab, setTab] = useState<"DEPOSIT" | "WITHDRAW" | "HISTORY">(initialTab);
   const [depositStep, setDepositStep] = useState<"FORM" | "PAYMENT">("FORM");
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("JazzCash");
+  const [method, setMethod] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptUrl, setReceiptUrl] = useState("");
   const [details, setDetails] = useState("");
@@ -54,6 +59,7 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [financeSettings, setFinanceSettings] = useState({ minDeposit: 100, minWithdrawal: 500, wageringRequirementPercent: 30, depositsEnabled: true, withdrawalsEnabled: true });
   const [nowPayments, setNowPayments] = useState<NowPaymentsConfig>({ enabled: false, currencies: [] });
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodConfig[]>([]);
   const [cryptoCurrency, setCryptoCurrency] = useState("");
   const [cryptoPayment, setCryptoPayment] = useState<NowPaymentInstructions | null>(null);
 
@@ -63,6 +69,9 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
   const wagerProgress = wagerTarget > 0 ? Math.min(100, (wagerCompleted / wagerTarget) * 100) : 100;
   const withdrawalMinimum = Math.max(500, Number(financeSettings.minWithdrawal ?? 500));
   const formatMoney = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const availableDepositMethods = paymentMethods.filter((item) => item.depositEnabled);
+  const availableWithdrawalMethods = paymentMethods.filter((item) => item.withdrawalEnabled);
+  const selectedPaymentMethod = paymentMethods.find((item) => item.code === method) ?? null;
 
   const loadHistory = async () => {
     const [transactionResult, depositResult, withdrawalResult] = await Promise.all([
@@ -79,6 +88,12 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
     void apiRequest<{ settings: typeof financeSettings }>("/api/finance/settings")
       .then((result) => setFinanceSettings(result.settings))
       .catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load wallet settings."));
+    void apiRequest<{ methods: PaymentMethodConfig[] }>("/api/payment-methods")
+      .then((result) => {
+        setPaymentMethods(result.methods);
+        setMethod((current) => result.methods.some((item) => item.code === current && item.depositEnabled) ? current : (result.methods.find((item) => item.depositEnabled)?.code ?? ""));
+      })
+      .catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load payment methods."));
     void apiRequest<NowPaymentsConfig>("/api/payments/nowpayments/config")
       .then((result) => {
         setNowPayments(result);
@@ -99,6 +114,18 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
     if (tab === "WITHDRAW") void refreshWallet().catch(() => undefined);
   }, [tab]);
   useEffect(() => { setTab(initialTab); }, [initialTab]);
+  useEffect(() => {
+    if (tab === "WITHDRAW") {
+      if (method === NOWPAYMENTS_METHOD || !availableWithdrawalMethods.some((item) => item.code === method)) {
+        setMethod(availableWithdrawalMethods[0]?.code ?? "");
+      }
+      return;
+    }
+    if (tab === "DEPOSIT") {
+      const validMethod = method === NOWPAYMENTS_METHOD ? nowPayments.enabled : availableDepositMethods.some((item) => item.code === method);
+      if (!validMethod) setMethod(availableDepositMethods[0]?.code ?? (nowPayments.enabled ? NOWPAYMENTS_METHOD : ""));
+    }
+  }, [tab, paymentMethods, nowPayments.enabled, method]);
 
   const refreshWallet = async () => {
     const result = await apiRequest<{ wallet: WalletSnapshot }>("/api/wallet");
@@ -149,7 +176,7 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
         return;
       }
       const uploadedReceiptUrl = receiptUrl || (receiptFile ? await uploadReceipt(receiptFile) : "");
-      if (!uploadedReceiptUrl) throw new Error("Upload your payment receipt before submitting.");
+      if (selectedPaymentMethod?.receiptRequired && !uploadedReceiptUrl) throw new Error("Upload your payment receipt before submitting.");
       await apiRequest("/api/deposits", {
         method: "POST",
         body: JSON.stringify({ amount: Number(amount), method, reference: "RECEIPT_UPLOAD", receiptUrl: uploadedReceiptUrl })
@@ -200,14 +227,14 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
           <button onClick={onClose}>×</button>
         </header>
         <nav className="finance-tabs">
-          <button className={tab === "DEPOSIT" ? "active" : ""} onClick={() => { setTab("DEPOSIT"); setDepositStep("FORM"); }}>Deposit</button>
-          <button className={tab === "WITHDRAW" ? "active" : ""} onClick={() => { setTab("WITHDRAW"); setDepositStep("FORM"); if (method === NOWPAYMENTS_METHOD) setMethod("EasyPaisa"); }}>Withdraw</button>
+          <button className={tab === "DEPOSIT" ? "active" : ""} onClick={() => { setTab("DEPOSIT"); setDepositStep("FORM"); if (!availableDepositMethods.some((item) => item.code === method) && method !== NOWPAYMENTS_METHOD) setMethod(availableDepositMethods[0]?.code ?? (nowPayments.enabled ? NOWPAYMENTS_METHOD : "")); }}>Deposit</button>
+          <button className={tab === "WITHDRAW" ? "active" : ""} onClick={() => { setTab("WITHDRAW"); setDepositStep("FORM"); if (method === NOWPAYMENTS_METHOD || !availableWithdrawalMethods.some((item) => item.code === method)) setMethod(availableWithdrawalMethods[0]?.code ?? ""); }}>Withdraw</button>
           <button className={tab === "HISTORY" ? "active" : ""} onClick={() => setTab("HISTORY")}>History</button>
         </nav>
 
         {tab === "DEPOSIT" && (
           <form className="finance-form finance-reference-form" onSubmit={submitDeposit}>
-            <div className="finance-methods">{[...depositMethods, ...(nowPayments.enabled ? [{ value: NOWPAYMENTS_METHOD, label: "Crypto", icon: "N", logo: "/payment-logos/crypto.png" }] : [])].map((item) => <button type="button" key={item.value} className={`finance-method ${method === item.value ? "active" : ""}`} onClick={() => selectMethod(item.value)}>{item.logo ? <img src={item.logo} alt="" /> : <strong>{item.icon}</strong>}<span>{item.label}</span></button>)}</div>
+            <div className="finance-methods">{[...availableDepositMethods.map((item) => ({ value: item.code, label: item.title, icon: item.title.slice(0, 2).toUpperCase(), logo: item.logoUrl })), ...(nowPayments.enabled ? [{ value: NOWPAYMENTS_METHOD, label: "Crypto", icon: "N", logo: "/payment-logos/crypto.png" }] : [])].map((item) => <button type="button" key={item.value} className={`finance-method ${method === item.value ? "active" : ""}`} onClick={() => selectMethod(item.value)}>{item.logo ? <img src={item.logo} alt="" /> : <strong>{item.icon}</strong>}<span>{item.label}</span></button>)}</div>
             <div className="finance-section-label">Select amount</div>
             <div className="finance-quick-amounts">{depositQuickAmounts.map((value) => <button type="button" key={value} className={Number(amount) === value ? "active" : ""} onClick={() => { setAmount(String(value)); setCryptoPayment(null); setDepositStep("FORM"); }}>{value.toLocaleString()}</button>)}</div>
             <label className="finance-input-label">Deposit amount<input type="number" min={financeSettings.minDeposit} step="0.01" placeholder="PKR" value={amount} onChange={(event) => { setAmount(event.target.value); setCryptoPayment(null); setDepositStep("FORM"); }} required /></label>
@@ -215,11 +242,11 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
               ? <label className="finance-input-label">Pay with<select value={cryptoCurrency} onChange={(event) => { setCryptoCurrency(event.target.value); setCryptoPayment(null); }}>{nowPayments.currencies.map((currency) => <option value={currency} key={currency}>{currency.toUpperCase()}</option>)}</select></label>
               : null}
             <div className="finance-tutorial"><strong>Deposit tutorial</strong><span>1. Select an amount and tap Continue.</span><span>2. Complete the payment, then upload your receipt.</span><span>3. Approved deposits add a {financeSettings.wageringRequirementPercent}% wagering requirement.</span></div>
-            {depositStep === "FORM" ? <button className="finance-submit" disabled={busy || !financeSettings.depositsEnabled || (method === NOWPAYMENTS_METHOD && !cryptoCurrency)}>{!financeSettings.depositsEnabled ? "Deposits disabled" : "Continue"}</button> : <>
-              {method !== NOWPAYMENTS_METHOD && <label className="finance-input-label">Payment receipt<input type="file" accept="image/*" onChange={(event) => { setReceiptFile(event.target.files?.[0] ?? null); setReceiptUrl(""); }} required /></label>}
-              <button className="finance-submit" disabled={busy || !financeSettings.depositsEnabled || (method === NOWPAYMENTS_METHOD && (!cryptoCurrency || Boolean(cryptoPayment)))}>{!financeSettings.depositsEnabled ? "Deposits disabled" : busy ? "Submitting..." : cryptoPayment ? "Payment created" : method === NOWPAYMENTS_METHOD ? "Create crypto payment" : "Submit deposit"}</button>
+            {depositStep === "FORM" ? <button className="finance-submit" disabled={busy || !financeSettings.depositsEnabled || !method || (method === NOWPAYMENTS_METHOD && !cryptoCurrency)}>{!financeSettings.depositsEnabled ? "Deposits disabled" : "Continue"}</button> : <>
+              {method !== NOWPAYMENTS_METHOD && selectedPaymentMethod?.receiptRequired && <label className="finance-input-label">Payment receipt<input type="file" accept="image/*" onChange={(event) => { setReceiptFile(event.target.files?.[0] ?? null); setReceiptUrl(""); }} required /></label>}
+              <button className="finance-submit" disabled={busy || !financeSettings.depositsEnabled || !method || (method === NOWPAYMENTS_METHOD && (!cryptoCurrency || Boolean(cryptoPayment)))}>{!financeSettings.depositsEnabled ? "Deposits disabled" : busy ? "Submitting..." : cryptoPayment ? "Payment created" : method === NOWPAYMENTS_METHOD ? "Create crypto payment" : "Submit deposit"}</button>
             </>}
-            {depositStep === "PAYMENT" && (method === "JazzCash" || method === "EasyPaisa") && <section className="jazzcash-payment-card"><img src="/payment-logos/jazzcash-qr.png" alt="QR payment code" /><div className="till-id-heading">{method === "JazzCash" ? "TILL ID" : "RAAST ID"}</div><div className="till-id-digits">{(method === "JazzCash" ? JAZZCASH_TILL_ID : EASYPAISA_RAAST_ID).split("").map((digit: string, index: number) => <span key={`${digit}-${index}`}>{digit}</span>)}</div><div className="till-id-row"><small>{method === "JazzCash" ? "Use this Till ID in JazzCash." : "Use this Raast ID in Easypaisa."}</small><button type="button" onClick={() => copyPaymentValue(method === "JazzCash" ? JAZZCASH_TILL_ID : EASYPAISA_RAAST_ID)}>Copy ID</button></div><small>{method === "JazzCash" ? "Scan the QR code or dial *786*10# and enter this Till ID to pay." : "Scan the QR code or use this Raast ID to pay via Easypaisa."}</small></section>}
+            {depositStep === "PAYMENT" && method !== NOWPAYMENTS_METHOD && selectedPaymentMethod && <section className="jazzcash-payment-card">{selectedPaymentMethod.qrImageUrl && <img src={selectedPaymentMethod.qrImageUrl} alt={`${selectedPaymentMethod.title} QR payment code`} />}<div className="till-id-heading">{selectedPaymentMethod.identifierLabel}</div>{selectedPaymentMethod.identifierValue && <div className="till-id-digits payment-id-value">{selectedPaymentMethod.identifierValue}</div>}<div className="till-id-row"><small>Use these {selectedPaymentMethod.title} payment details.</small>{selectedPaymentMethod.identifierValue && <button type="button" onClick={() => copyPaymentValue(selectedPaymentMethod.identifierValue)}>Copy ID</button>}</div><small>{selectedPaymentMethod.instructions}</small></section>}
             {depositStep === "PAYMENT" && cryptoPayment && <section className="crypto-payment-card" aria-live="polite">
               <header><div><small>NOWPayments</small><strong>Send exactly {cryptoPayment.payAmount} {cryptoPayment.payCurrency.toUpperCase()}</strong></div><span>{cryptoPayment.status.replaceAll("_", " ")}</span></header>
               {cryptoPayment.network && <p>Network <strong>{cryptoPayment.network.toUpperCase()}</strong></p>}
@@ -233,13 +260,13 @@ export function FinanceModal({ wallet, onClose, onWalletRefresh, initialTab = "D
         {tab === "WITHDRAW" && (
           <form className="finance-form finance-reference-form" onSubmit={submitWithdrawal}>
             <div className="finance-balance-summary"><div><strong>{formatMoney(wallet.balance)}</strong><span>Cash balance</span></div><div><strong>{formatMoney(Math.max(0, wallet.balance - wallet.pendingRewards))}</strong><span>Withdrawable</span></div></div>
-            <div className="finance-methods finance-withdraw-methods">{withdrawalMethods.map((item) => <button type="button" key={item.value} className={`finance-method ${method === item.value ? "active" : ""}`} onClick={() => selectMethod(item.value)}>{item.logo ? <img src={item.logo} alt="" /> : <strong>{item.icon}</strong>}<span>{item.label}</span></button>)}</div>
+            <div className="finance-methods finance-withdraw-methods">{availableWithdrawalMethods.map((item) => <button type="button" key={item.code} className={`finance-method ${method === item.code ? "active" : ""}`} onClick={() => selectMethod(item.code)}>{item.logoUrl ? <img src={item.logoUrl} alt="" /> : <strong>{item.title.slice(0, 2).toUpperCase()}</strong>}<span>{item.title}</span></button>)}</div>
             <label className="finance-input-label">Choose account<textarea value={details} onChange={(event) => setDetails(event.target.value)} placeholder="Add your wallet, bank or account details" required rows={3} /></label>
             <button type="button" className="finance-add-account" onClick={() => setDetails("")}>Add new account</button>
             <div className="finance-wager-progress"><div><span>Wagering progress</span><strong>{formatMoney(wagerCompleted)} / {formatMoney(wagerTarget)} PKR</strong><small>Spent / required</small></div><div className="finance-wager-progress-bar"><span style={{ width: `${wagerProgress}%` }} /></div><p>{wagerRemaining <= 0 ? "Requirement completed. Withdrawals are unlocked." : `Spend ${formatMoney(wagerRemaining)} PKR more in settled bets to unlock withdrawals.`}</p></div>
             <label className="finance-input-label">Withdrawal amount ({withdrawalMinimum.toLocaleString()} - {formatMoney(wallet.balance)} PKR)<input type="number" min={withdrawalMinimum} max={wallet.balance} step="0.01" placeholder="Withdrawal amount" value={amount} onChange={(event) => setAmount(event.target.value)} required /></label>
             <div className="finance-withdraw-summary"><div><span>Withdraw amount</span><strong>RS:{formatMoney(Number(amount) || 0)}</strong></div><div><span>Remain wagers</span><strong>{formatMoney(wagerRemaining)} PKR</strong></div><div><span>Remaining withdrawal attempts</span><strong>{wagerTarget > 0 && wagerRemaining > 0 ? "Locked" : "Available"}</strong></div></div>
-            <button className="finance-submit" disabled={busy || !financeSettings.withdrawalsEnabled || wagerRemaining > 0}>{!financeSettings.withdrawalsEnabled ? "Withdrawals disabled" : wagerRemaining > 0 ? "Complete wagering first" : busy ? "Submitting..." : "Submit withdrawal"}</button>
+            <button className="finance-submit" disabled={busy || !financeSettings.withdrawalsEnabled || wagerRemaining > 0 || !method}>{!financeSettings.withdrawalsEnabled ? "Withdrawals disabled" : wagerRemaining > 0 ? "Complete wagering first" : busy ? "Submitting..." : "Submit withdrawal"}</button>
           </form>
         )}
 

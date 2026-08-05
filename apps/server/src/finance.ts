@@ -12,6 +12,7 @@ import {
 import { fromMinor, minorFromDocument, toMinor } from "./money.js";
 import { enforceVipWithdrawalLimit } from "./bonus.js";
 import { processReferralDeposit } from "./referral.js";
+import { normalizePaymentMethods } from "./payment-methods.js";
 
 function walletFields(user: any) {
   const balanceMinor = minorFromDocument(user, "balanceMinor", "balance");
@@ -146,14 +147,16 @@ export async function createDepositRequest(input: {
   const amountMinor = toMinor(input.amount);
   const minDeposit = Number(settings?.minDeposit ?? 100);
   if (amountMinor < toMinor(minDeposit)) throw new Error(`Minimum deposit is ${minDeposit.toFixed(2)} PKR.`);
+  const method = normalizePaymentMethods((settings as any)?.paymentMethods).find((item) => item.code === input.method.trim());
+  if (!method || !method.depositEnabled) throw new Error("This deposit method is not available.");
   const receiptUrl = input.receiptUrl?.trim() ?? "";
-  if (!input.method.trim() || !receiptUrl) throw new Error("Method and payment receipt are required.");
+  if (method.receiptRequired && !receiptUrl) throw new Error("Payment receipt is required for this method.");
 
   return DepositRequestModel.create({
     userId: input.userId,
     amountMinor,
     amount: fromMinor(amountMinor),
-    method: input.method.trim(),
+    method: method.code,
     reference: input.reference?.trim() || "RECEIPT_UPLOAD",
     receiptUrl,
     note: input.note?.trim() ?? ""
@@ -195,7 +198,9 @@ export async function createWithdrawalRequest(input: {
   const amountMinor = toMinor(input.amount);
   const minWithdrawal = Math.max(500, Number(settings?.minWithdrawal ?? 500));
   if (amountMinor < toMinor(minWithdrawal)) throw new Error(`Minimum withdrawal is ${minWithdrawal.toFixed(2)} PKR.`);
-  if (!input.method.trim() || !input.accountDetails.trim()) throw new Error("Method and account details are required.");
+  const method = normalizePaymentMethods((settings as any)?.paymentMethods).find((item) => item.code === input.method.trim());
+  if (!method || !method.withdrawalEnabled) throw new Error("This withdrawal method is not available.");
+  if (!input.accountDetails.trim()) throw new Error("Account details are required.");
   await enforceVipWithdrawalLimit(input.userId);
 
   let created: any;
@@ -226,7 +231,7 @@ export async function createWithdrawalRequest(input: {
         userId: input.userId,
         amountMinor,
         amount: fromMinor(amountMinor),
-        method: input.method.trim(),
+        method: method.code,
         accountDetails: input.accountDetails.trim()
       }],
       { session, ordered: true }
