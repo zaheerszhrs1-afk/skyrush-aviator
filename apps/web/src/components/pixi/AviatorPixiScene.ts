@@ -3,10 +3,18 @@ import type { RoundSnapshot } from "../../types";
 
 const CRASH_SCREEN_MS = 3000;
 const WAITING_SCREEN_MS = 8000;
-const NEXT_ROUND_TOTAL_MS = CRASH_SCREEN_MS + WAITING_SCREEN_MS;
 const PRELOAD_WINDOW_MS = 1200;
 const MULTIPLIER_GROWTH_PER_MS = 0.00006;
-const FLIGHT_CATCH_UP_RATE = 2.5;
+// The server deliberately sends a two-decimal authoritative multiplier. At low
+// values that means the target position advances in visible steps (1.00, 1.01,
+// 1.02...). Follow those steps with a short exponential response instead of
+// racing to every target and stopping between packets. This keeps the plane
+// fluid while it always remains at or behind the authoritative multiplier.
+const FLIGHT_FOLLOW_RESPONSE_MS = 82;
+const PLANE_RENDER_WIDTH = 190;
+const PLANE_SOURCE_WIDTH = 476;
+const PLANE_SOURCE_HEIGHT = 294;
+const MAX_FLIGHT_PROGRESS = 0.94;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const easeOutCubic = (value: number) => 1 - Math.pow(1 - value, 3);
@@ -243,12 +251,15 @@ export class AviatorPixiScene {
       if (this.visualFlightElapsed > targetElapsed) {
         this.visualFlightElapsed = targetElapsed;
       } else {
-        // Smoothly catch up to each authoritative server step, but never move
-        // beyond it. The multiplier and plane therefore begin together and
-        // neither can get ahead of the final crash result.
+        // Exponential following preserves a continuous velocity between the
+        // server's rounded multiplier steps. It never overshoots targetElapsed,
+        // so the animation remains smooth without reintroducing a live/final
+        // multiplier mismatch.
+        const gap = targetElapsed - this.visualFlightElapsed;
+        const response = 1 - Math.exp(-Math.max(0, deltaMS) / FLIGHT_FOLLOW_RESPONSE_MS);
         this.visualFlightElapsed = Math.min(
           targetElapsed,
-          this.visualFlightElapsed + deltaMS * FLIGHT_CATCH_UP_RATE
+          this.visualFlightElapsed + gap * response
         );
       }
       this.rayRotation = (this.rayRotation + deltaMS * 0.00009) % (Math.PI * 2);
@@ -365,20 +376,24 @@ export class AviatorPixiScene {
     const inFlight = visualMultiplier > 1;
     const motionFactor = inFlight ? 1 : 0;
     const flightPoint = this.calculateFlightPoint(width, height, elapsed);
+    // Fade the ambient flight motion in gradually during takeoff. The old
+    // high-frequency wobble was fully active on the first movement frame and
+    // made the launch look shaky on mobile displays.
+    const takeoffBlend = easeOutCubic(clamp(flightPoint.progress / 0.16, 0, 1));
+    const ambientMotion = motionFactor * takeoffBlend;
     const planeX =
       flightPoint.x +
-      Math.sin(this.elapsedAnimation / 680) * Math.max(1.25, width * 0.0018) * motionFactor;
+      Math.sin(this.elapsedAnimation / 760) * Math.max(0.8, width * 0.00125) * ambientMotion;
     const planeY =
       flightPoint.y +
-      (Math.sin(this.elapsedAnimation / 210) * Math.max(2, height * 0.007) +
-        Math.sin(this.elapsedAnimation / 73) * Math.max(0.35, height * 0.0013)) * motionFactor;
+      Math.sin(this.elapsedAnimation / 520) * Math.max(1.1, height * 0.0035) * ambientMotion;
     const planeRotation =
-      -0.055 +
-      flightPoint.progress * -0.04 +
-      (Math.sin(this.elapsedAnimation / 420) * 0.016 +
-        Math.sin(this.elapsedAnimation / 145) * 0.0035) * motionFactor;
+      -0.048 +
+      flightPoint.progress * -0.045 +
+      Math.sin(this.elapsedAnimation / 620) * 0.009 * ambientMotion;
     const planeScale = this.getPlaneScale(width, height);
-    const animatedPlaneScale = planeScale * (1 + Math.sin(this.elapsedAnimation / 520) * 0.006 * motionFactor);
+    const animatedPlaneScale = planeScale *
+      (1 + Math.sin(this.elapsedAnimation / 720) * 0.0035 * ambientMotion);
     const tailPoint = this.calculatePlaneTailPoint(
       planeX,
       planeY,
@@ -438,26 +453,12 @@ export class AviatorPixiScene {
       this.plane.visible = false;
     }
 
-    const nextRoundRemaining = this.round.nextRoundStartsAt
-      ? Math.max(0, this.round.nextRoundStartsAt - this.getServerNow())
-      : null;
-
-    this.waitingText.visible = nextRoundRemaining !== null;
-    this.waitingBar.visible = nextRoundRemaining !== null;
-    if (nextRoundRemaining !== null) {
-      this.waitingText.text = `NEXT ROUND IN ${Math.max(1, Math.ceil(nextRoundRemaining / 1000))}s`;
-      this.waitingText.position.set(width * 0.5, height * 0.69);
-      this.waitingText.style.fontSize = clamp(height * 0.047, 16, 23);
-
-      const countdownProgress = clamp(1 - nextRoundRemaining / NEXT_ROUND_TOTAL_MS, 0, 1);
-      const barWidth = clamp(width * 0.30, 170, 360);
-      const barHeight = 7;
-      const barX = (width - barWidth) / 2;
-      const barY = height * 0.74;
-      this.waitingBar.clear();
-      this.waitingBar.roundRect(barX, barY, barWidth, barHeight, barHeight / 2).fill({ color: 0x26282c, alpha: 1 });
-      this.waitingBar.roundRect(barX, barY, barWidth * countdownProgress, barHeight, barHeight / 2).fill({ color: 0xff0048, alpha: 1 });
-    }
+    // The page already renders the single authoritative next-round timer.
+    // Keep the crash overlay focused on the result so users never see a
+    // duplicate countdown underneath “FLEW AWAY!”.
+    this.waitingText.visible = false;
+    this.waitingBar.visible = false;
+    this.waitingBar.clear();
     this.statusText.visible = true;
     this.statusText.text = "FLEW AWAY!";
     this.statusText.style.fontSize = clamp(height * 0.085, 28, 48);
@@ -579,13 +580,29 @@ export class AviatorPixiScene {
   }
 
   private calculateFlightPoint(width: number, height: number, elapsed: number): FlightPoint {
-    // Keep the launch sprite fully visible while elapsed is zero. This is the
-    // same takeoff point used by the preloaded 1.00x frame and the RUNNING frame.
-    const progress = clamp(Math.pow(Math.max(elapsed, 50) / 9000, 0.6), 0.026, 0.94);
-    const startX = Math.max(26, width * 0.025);
-    const baseY = height - Math.max(2, height * 0.008);
-    const x = startX + progress * width * 0.83;
-    const y = baseY - Math.pow(progress, 1.88) * height * 0.72;
+    const planeScale = this.getPlaneScale(width, height);
+    const planeHalfWidth = (PLANE_RENDER_WIDTH * planeScale) / 2;
+    const planeHalfHeight =
+      (PLANE_RENDER_WIDTH * (PLANE_SOURCE_HEIGHT / PLANE_SOURCE_WIDTH) * planeScale) / 2;
+    const horizontalMargin = clamp(width * 0.018, 14, 24);
+    const verticalMargin = clamp(height * 0.04, 14, 22);
+
+    // Position the plane by its real rendered bounds, not by the graph's bottom
+    // edge. This keeps the entire sprite visible on desktop, short screens and
+    // mobile while preserving the familiar bottom-left takeoff location.
+    const startX = planeHalfWidth + horizontalMargin;
+    const launchY = height - planeHalfHeight - verticalMargin;
+    const maxX = Math.max(startX, width - planeHalfWidth - horizontalMargin);
+    const topY = planeHalfHeight + verticalMargin;
+
+    // Start from a true zero-progress point. Removing the previous 50 ms floor
+    // eliminates the small frozen/jump transition at the first 1.01x update.
+    const progress = clamp(Math.pow(Math.max(0, elapsed) / 9000, 0.6), 0, MAX_FLIGHT_PROGRESS);
+    const routeProgress = progress / MAX_FLIGHT_PROGRESS;
+    const x = startX + (maxX - startX) * routeProgress;
+    const y = launchY -
+      Math.pow(routeProgress, 1.82) * Math.max(0, launchY - topY) * 0.78;
+
     return { x, y, progress };
   }
 
