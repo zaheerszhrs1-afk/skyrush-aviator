@@ -2,7 +2,6 @@ import * as PIXI from "pixi.js";
 import type { RoundSnapshot } from "../../types";
 
 const CRASH_SCREEN_MS = 3000;
-const MULTIPLIER_GROWTH_PER_MS = 0.00006;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const easeOutCubic = (value: number) => 1 - Math.pow(1 - value, 3);
@@ -285,14 +284,12 @@ export class AviatorPixiScene {
     multiplier: number = this.round.multiplier
   ): void {
     const elapsed = startedAt ? Math.max(0, now - startedAt) : 0;
-    // Use the same authoritative start clock as the server to bridge dropped
-    // volatile tick packets. The existing Pixi ticker keeps this smooth without
-    // adding React renders or another timer; the server still controls betting
-    // and the actual crash result.
-    const clockMultiplier = startedAt
-      ? Math.exp(elapsed * MULTIPLIER_GROWTH_PER_MS)
-      : multiplier;
-    const visualMultiplier = Number(Math.max(1, multiplier, clockMultiplier).toFixed(2));
+    // The multiplier text must remain authoritative. Extrapolating it from the
+    // client clock can run ahead of the server because of clock skew or a
+    // delayed crash packet, making the live value higher than the final result.
+    // Keep the plane animation time-based, but render only the latest server
+    // multiplier so the live and FLEW AWAY values can never contradict.
+    const visualMultiplier = Number(Math.max(1, multiplier).toFixed(2));
     const flightPoint = this.calculateFlightPoint(width, height, elapsed);
     const planeX =
       flightPoint.x +
@@ -375,7 +372,7 @@ export class AviatorPixiScene {
     this.statusText.position.set(width * 0.5, height * 0.34);
 
     this.multiplierText.visible = true;
-    this.multiplierText.text = `${this.round.multiplier.toFixed(2)}x`;
+    this.multiplierText.text = `${(this.round.crashPoint ?? this.round.multiplier).toFixed(2)}x`;
     this.multiplierText.style.fill = 0xe40027;
     this.multiplierText.position.set(width * 0.5, height * 0.51);
     this.multiplierText.alpha = clamp(crashElapsed / 180, 0, 1);

@@ -835,9 +835,10 @@ export class GameEngine {
       }
 
       if (crashJustTriggered) {
-        // Broadcast the authoritative crash point before settlement queries so
-        // the animation never waits for remote database writes.
-        this.emitTick();
+        // The crash boundary is a final result, not a disposable animation
+        // frame. Send it reliably before settlement queries so every client
+        // switches to the exact authoritative multiplier immediately.
+        this.io.emit("round:tick", this.getTick());
       }
 
       this.bots.onTick(this.phase, this.multiplier);
